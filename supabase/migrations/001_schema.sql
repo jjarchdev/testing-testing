@@ -117,7 +117,7 @@ create policy scenarios_select_published on public.scenarios
   for select to anon, authenticated
   using (is_published = true);
 
--- API roles need table privileges (secret key / service_role bypasses RLS but still needs GRANTs)
+
 grant usage on schema public to anon, authenticated, service_role;
 grant select on table public.categories to anon, authenticated, service_role;
 grant all on table public.categories to service_role;
