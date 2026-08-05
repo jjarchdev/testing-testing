@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: qm-playbook
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: node server/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_USER
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      # Confluence integration (optional — omit if you don't want it)
+      - key: CONFLUENCE_CLIENT_ID
+        sync: false
+      - key: CONFLUENCE_CLIENT_SECRET
+        sync: false
+      - key: CONFLUENCE_REDIRECT_URI
+        sync: false
+      - key: CONFLUENCE_ENCRYPTION_KEY
+        sync: false
