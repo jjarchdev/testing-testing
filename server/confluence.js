@@ -1,15 +1,3 @@
-// Confluence integration.
-//
-// Supports two flavors:
-//   * cloud — Atlassian 3LO OAuth 2.0 (per-user). The admin signs in with their
-//             own Atlassian identity; access/refresh tokens are stored encrypted.
-//   * dc    — Confluence Data Center / Server. The admin pastes a Personal
-//             Access Token (Bearer). The PAT is stored encrypted.
-//
-// Only one connection exists at a time (single-admin model). Employees never see
-// credentials — they call the server proxy for a page, and only pages linked
-// from a **published** scenario are returned.
-
 import { getSupabase, isSupabaseConfigured } from "./db.js";
 import { decryptSecret, encryptSecret, randomToken } from "./secrets.js";
 import { sanitizeHtml } from "./htmlSanitize.js";
@@ -335,7 +323,6 @@ export async function saveDcConnection({ baseUrl, personalAccessToken, username 
     throw err;
   }
 
-  // Verify credentials by calling the current-user endpoint.
   const verifyUrl = `${base}/rest/api/user/current`;
   const res = await fetch(verifyUrl, {
     headers: { Authorization: `Bearer ${pat}`, Accept: "application/json" },

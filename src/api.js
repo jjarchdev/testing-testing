@@ -18,25 +18,38 @@ export function apiFetch(path, options = {}) {
   });
 }
 
-/** Same as apiFetch; cookie session is sent via credentials: "include". */
 export function apiFetchWithAuth(path, options = {}) {
   return apiFetch(path, options);
 }
 
-/** Returns { admin, email, bootstrap } — callers can destructure or use booleans directly. */
 export async function fetchAdminSession() {
   const res = await apiFetch("/api/auth/me");
-  if (!res.ok) return { admin: false, email: null, bootstrap: false };
+  if (!res.ok) return { admin: false, email: null };
   const data = await res.json().catch(() => ({}));
   return {
     admin: data?.admin === true,
     email: data?.email || null,
-    bootstrap: !!data?.bootstrap,
   };
 }
 
+export async function loginWithEnvCredentials({ username, password }) {
+  const res = await apiFetch("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({
+      username: username || "",
+      password: password || "",
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data?.error || `Login failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
 export async function logoutAdmin() {
-  // Sign out of Supabase (if present) so magic links / OAuth sessions don't linger.
   try {
     const mod = await import("./supabase.js");
     const client = await mod.getSupabaseAuth();
@@ -47,7 +60,6 @@ export async function logoutAdmin() {
   await apiFetch("/api/auth/logout", { method: "POST" });
 }
 
-/** Upload an image file; returns public URL string. */
 export async function uploadImageFile(file) {
   const body = new FormData();
   body.append("file", file);

@@ -3,11 +3,6 @@ import { useTranslation } from "react-i18next";
 import { fetchConfluencePage } from "./api.js";
 import { styles } from "./styles.js";
 
-/**
- * Renders a Confluence page fetched from the server proxy. Server has already
- * sanitized the HTML (allowlist tags, javascript: URIs stripped), so injecting
- * it via dangerouslySetInnerHTML is intentional and bounded.
- */
 export default function ConfluenceView({ pageId, pageUrl, pageTitle }) {
   const { t } = useTranslation();
   const [state, setState] = useState({ loading: true, page: null, error: "" });
@@ -68,7 +63,7 @@ export default function ConfluenceView({ pageId, pageUrl, pageTitle }) {
         <div
           className="confluence-body"
           style={styles.confluenceBody}
-          // eslint-disable-next-line react/no-danger -- server-sanitized allowlist HTML
+          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: state.page.html || "" }}
         />
       ) : (

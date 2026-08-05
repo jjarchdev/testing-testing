@@ -18,62 +18,62 @@
     "back": "← Kthehu",
     "title": "Njoftim i privatësisë",
     "updated": "Përditësuar më: {{date}}",
-    "controllerHeading": "Kontrolluesi i të dhënave",
-    "controllerBody": "{{org}} është kontrolluesi i të dhënave për këtë aplikacion. Kontakti: {{email}}.",
-    "whatWeProcessHeading": "Çfarë përpunojmë",
-    "whatWeProcessLead": "Ky aplikacion përpunon këto kategori të të dhënave personale:",
+    "controllerHeading": "Kush e mban këtë",
+    "controllerBody": "{{org}} e mban këtë playbook dhe është përgjegjës për të dhënat brenda tij. Për pyetje, shkruaj te {{email}} — të përgjigjet një person i vërtetë.",
+    "whatWeProcessHeading": "Çfarë ruajmë vërtet",
+    "whatWeProcessLead": "Përpiqemi të ruajmë sa më pak. Lista e plotë:",
     "wp": {
-      "admin": "Kredencialet e adminit (përdoruesi / fjalëkalimi) të vendosura si variabla mjedisi në server.",
-      "session": "Një cookie i shkurtër sesioni (qm_admin) që përmban vetëm një shenjues roli admin — pa identifikues personalë.",
-      "ip": "Adresat IP të përpjekjeve të dështuara për hyrje, të mbajtura në memorie deri në 15 minuta për kufizimin e ritmit.",
-      "confluence": "Për adminët që lidhin Confluence: email-i ose emri i llogarisë, metadata e sajtit Confluence dhe access/refresh tokens (të enkriptuara).",
-      "content": "Çfarë adminët shkruajnë në skenarë, kategori, etiketa dhe imazhe. Adminët duhet të shmangin të dhënat personale të identifikueshme pa bazë ligjore."
+      "admin": "Email-et e adminëve — për t'u kyçur dhe për të ditur kush ka ftuar kë. Fjalëkalimet shkojnë direkt te Supabase Auth dhe ruhen të hash-uara atje; ne s'i shohim kurrë në tekst të thjeshtë.",
+      "session": "Një cookie i shkurtër sesioni (qm_admin) që të mban të kyçur. Përmban një shenjë admin dhe email-in tënd — asgjë tjetër.",
+      "ip": "Nëse një kyçje dështon, e mbajmë adresën IP në memorie 15 minuta për të ngadalësuar brute-force. Kaq.",
+      "confluence": "Nëse lidh një llogari Confluence, ruajmë emrin e sajtit, email-in Atlassian dhe tokenin e aksesit. Tokeni enkripohet para se të prekë bazën e të dhënave.",
+      "content": "Çfarëdo që adminët shkruajnë në skenarë, kategori, etiketa dhe imazhe. Nëse është për një person, të lutem ki një arsye të mirë."
     },
-    "noEmployeeTracking": "Punonjësit që lexojnë skenarët nuk duhet të kyçen. Nuk përdoren analitika, cookies gjurmuese ose gjurmues të palës së tretë.",
-    "purposeHeading": "Qëllimet",
+    "noEmployeeTracking": "Punonjësit që vetëm lexojnë playbook-un nuk kyçen dhe nuk gjurmohen. Asnjë analitikë, reklamë, apo skript i palës së tretë.",
+    "purposeHeading": "Pse ruajmë secilën gjë",
     "purpose": {
-      "admin": "Administrimi i përmbajtjes së procedurave (krijim/editim/publikim i skenarëve).",
-      "security": "Kufizimi i ritmit të përpjekjeve për hyrje dhe mbrojtja nga brute-force.",
-      "confluence": "Marrja dhe shfaqja e faqeve Confluence që adminët zgjedhin të lidhin me një skenar."
+      "admin": "Që adminët të kyçen dhe të ndryshojnë playbook-un.",
+      "security": "Që dikush të mos rrahë faqen e kyçjes.",
+      "confluence": "Që faqja e lidhur Confluence të shfaqet brenda skenarit për ekipin tënd."
     },
-    "legalBasisHeading": "Baza ligjore (GDPR nen 6)",
-    "legalBasisBody": "Interesi legjitim për administrimin e procedurave dhe sigurimin e aksesit; pëlqimi i adminit që lidh një llogari Confluence.",
-    "retentionHeading": "Mbajtja",
+    "legalBasisHeading": "Baza ligjore",
+    "legalBasisBody": "Interesi legjitim për funksionimin dhe sigurinë e playbook-ut. Nëse zgjedh të lidhësh Confluence, kjo është me pëlqimin tënd — shkëpute kur të duash nga paneli i adminit.",
+    "retentionHeading": "Sa kohë e mbajmë",
     "retention": {
-      "session": "Cookie sesioni: 8 orë ose deri në dalje.",
-      "ip": "Numëruesit IP të dështimeve: 15 minuta.",
-      "content": "Skenarët dhe kategoritë: derisa admini t'i fshijë. Fshirja e një skenari heq edhe imazhet e ngarkuara.",
-      "tokens": "Tokenat Confluence: derisa admini t'i shkëpusë."
+      "session": "Cookie kyçjeje: 8 orë ose deri në dalje.",
+      "ip": "Numëruesit e dështimeve: 15 minuta.",
+      "content": "Skenarë, kategori, imazhe: derisa një admin t'i fshijë. Fshirja e një skenari fshin edhe imazhet e tij.",
+      "tokens": "Tokenat Confluence: derisa një admin të klikojë Shkëput."
     },
-    "subprocessorsHeading": "Nën-përpunuesit",
+    "subprocessorsHeading": "Kush tjetër i prek të dhënat",
     "sub": {
-      "supabase": "Supabase — bazë të dhënash dhe ruajtje objektesh. DPA në supabase.com/legal/dpa.",
-      "render": "Render — hostimi i aplikacionit. DPA në render.com/legal/dpa.",
-      "atlassian": "Atlassian — vetëm kur Confluence është i lidhur. DPA në atlassian.com/legal/data-processing-addendum."
+      "supabase": "Supabase — mban bazën e të dhënave, ruajtjen e imazheve dhe kyçjen. DPA: supabase.com/legal/dpa",
+      "render": "Render — mban vetë aplikacionin. DPA: render.com/legal/dpa",
+      "atlassian": "Atlassian — vetëm nëse një admin lidh Confluence. DPA: atlassian.com/legal/data-processing-addendum"
     },
-    "transfersBody": "Nëse rajonet e Supabase ose Render janë jashtë EEA-së, transferet mbulohen nga Klauzolat Standarde Kontraktuale të BE-së në DPA-t përkatëse. Preferoni rajone të BE-së (Frankfurt / Irlandë).",
+    "transfersBody": "Rekomandojmë të zgjedhësh rajonet e BE-së në Supabase dhe Render (Frankfurt ose Irlandë) që të dhënat të mbeten në EEA. Nëse dalin jashtë, mbulohen nga klauzolat standarde të BE-së në DPA-t sipër.",
     "cookiesHeading": "Cookies",
-    "cookiesBody": "Përdoret vetëm një cookie strikt i nevojshëm: qm_admin, cookie sesioni httpOnly pas hyrjes së adminit. Asnjë cookie analitike apo reklamimi. Nuk kërkohet banner pëlqimi sipas ePrivacy.",
-    "securityHeading": "Masat e sigurisë (nen 32)",
+    "cookiesBody": "Një cookie: qm_admin. Vendoset vetëm pas kyçjes së adminit. Punonjësit nuk marrin kurrë cookie. Pa analitikë, pa reklamim. Meqë ky cookie është strikt i nevojshëm, ligjërisht nuk kërkohet banner pëlqimi — njoftimi i vogël poshtë është vetëm për informim.",
+    "securityHeading": "Si i mbrojmë",
     "sec": {
-      "https": "HTTPS i detyrueshëm në prodhim (HSTS i aktivizuar).",
-      "encRest": "Enkriptim në qetësi në bazën e të dhënave përmes Supabase.",
+      "https": "Në prodhim gjithçka shërbehet me HTTPS, me HSTS aktiv.",
+      "encRest": "Supabase enkripton bazën dhe skedarët në qetësi.",
       "encTokens": "Tokenat Confluence enkriptohen me AES-256-GCM para ruajtjes.",
-      "access": "Kontroll aksesi me krahasim të kohës konstante të fjalëkalimit dhe cookie sesioni të nënshkruar."
+      "access": "Vetëm personat në listën e adminëve mund të kyçen. Kyçja bëhet me Supabase Auth; cookie i sesionit është httpOnly dhe SameSite=Lax."
     },
-    "rightsHeading": "Të drejtat tuaja",
-    "rightsBody": "Sipas GDPR-së keni këto të drejta mbi të dhënat tuaja personale:",
+    "rightsHeading": "Të drejtat tua",
+    "rightsBody": "Sipas GDPR-së mundesh të:",
     "rights": {
-      "access": "Aksesi — kërkoni kopje të të dhënave.",
-      "rectify": "Korrigjim — kërkoni të korrigjohen të dhëna të pasakta.",
-      "erase": "Fshirje — kërkoni fshirjen (varësisht detyrimeve ligjore).",
-      "portability": "Bartja — kërkoni një eksportim JSON të lexueshëm nga makina.",
-      "object": "Kundërshtim ose kufizim i përpunimit mbi bazë të interesit legjitim.",
-      "complain": "Ankim tek autoriteti kombëtar i mbrojtjes së të dhënave."
+      "access": "Kërkosh një kopje të asaj që mbajmë për ty.",
+      "rectify": "Kërkosh të korrigjohet diçka e gabuar.",
+      "erase": "Kërkosh fshirjen (nganjëherë ka arsye ligjore që nuk mundemi menjëherë — të themi pse).",
+      "portability": "Kërkosh një skedar JSON me të dhënat — adminët mund të eksportojnë direkt nga app-i.",
+      "object": "Kërkosh të ndalim ose kufizojmë një përdorim të caktuar.",
+      "complain": "Të ankohesh te autoriteti yt kombëtar i mbrojtjes së të dhënave nëse gabojmë."
     },
-    "contactBody": "Kontaktoni {{email}} për të ushtruar këto të drejta. Do të përgjigjemi brenda një muaji.",
-    "breachHeading": "Njoftimi për shkelje të të dhënave",
-    "breachBody": "Nëse zbulojmë një shkelje që mund të krijojë rrezik për të drejtat tuaja, do të njoftojmë autoritetin brenda 72 orëve dhe do të informojmë personat e prekur pa vonesa."
+    "contactBody": "Për cilëndo prej këtyre, dërgo email te {{email}}. Do të përgjigjemi brenda një muaji, zakonisht shumë më shpejt.",
+    "breachHeading": "Nëse diçka shkon keq",
+    "breachBody": "Nëse zbulojmë një shkelje që realisht mund të të dëmtojë, njoftojmë autoritetin brenda 72 orëve dhe personat e prekur pa vonesa të panevojshme."
   },
   "employee": {
     "navLabel": "Filtrat e skenarëve",
@@ -147,7 +147,17 @@
     "yesRevoke": "Po, hiq",
     "cancel": "Anulo",
     "revokeConfirm": "Të hiqet aksesi admin për {{email}}?",
-    "you": "(ti)"
+    "you": "(ti)",
+    "inviteSent": "Emaili i ftesës u dërgua te {{email}}. Do të vendosin fjalëkalim nga linku.",
+    "inviteExisting": "{{email}} ka tashmë llogari. Dërguam një link kyçjeje që ta dinë se u është dhënë aksesi.",
+    "inviteAdded": "{{email}} u shtua në listë.",
+    "inviteEmailFailed": "{{email}} u shtua në listë, por emaili s'u dërgua: {{reason}}. Kërkoju të regjistrohen vetë — llogaria do funksionojë."
+  },
+  "cookie": {
+    "aria": "Njoftim për cookie",
+    "body": "Vendosim vetëm një cookie — për kyçjen e adminit. Punonjësit s'marrin cookie. Pa gjurmim, pa reklama.",
+    "readMore": "Detajet",
+    "ok": "Kuptohet"
   },
   "login": {
     "title": "Portali i Adminit",
@@ -169,7 +179,6 @@
     "tabPassword": "Fjalëkalim",
     "tabMagic": "Link magjik",
     "tabRegister": "Regjistrohu",
-    "google": "Vazhdo me Google",
     "sendMagic": "Dërgo link magjik",
     "sending": "Duke dërguar…",
     "magicSent": "Kontrollo email-in për linkun e kyçjes.",
@@ -184,7 +193,7 @@
     "supabaseUnavailable": "Shërbimi i kyçjes s'është i disponueshëm. Kontakto një admin.",
     "noSession": "Supabase nuk ktheu asnjë sesion.",
     "bootstrapTitle": "Kyçje bootstrap (variabla mjedisi)",
-    "bootstrapWarn": "Kyçja bootstrap është ende aktive sepse s'ka admin të ftuar. Kyçu më poshtë, fto veten përmes Menaxho adminët dhe hiq ADMIN_PASSWORD nga variablat e serverit."
+    "orSupabase": "Ose hyni me Supabase Auth"
   },
   "admin": {
     "navLabel": "Navigimi i adminit",
@@ -277,7 +286,11 @@
     "needCategory": "Shto një kategori më parë.",
     "fieldsRequired": "Titulli, skenari dhe zgjidhja janë të detyrueshme.",
     "unsavedConfirm": "Ke ndryshime të paruajtura. Të hidhen poshtë?",
-    "confluencePage": "Faqe Confluence (opsionale)"
+    "confluencePage": "Faqe Confluence (opsionale)",
+    "needOneLanguage": "Plotëso titullin, skenarin dhe zgjidhjen për të paktën një gjuhë.",
+    "partialWarn": "Disa gjuhë janë të paplota dhe s'do t'u shfaqen punonjësve ({{langs}}). Të ruhet gjithsesi?",
+    "languagesLabel": "Gjuhët e përmbajtjes",
+    "languagesHelp": "Plotëso një, dy ose të treja. Punonjësit shohin versionin që përkon me gjuhën e tyre, ose të parën në dispozicion."
   },
   "confluence": {
     "back": "← Kthehu te skenarët",

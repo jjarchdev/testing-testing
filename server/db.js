@@ -3,13 +3,14 @@ import { normalizeCategory, slugifyLabel } from "../shared/categoryMap.mjs";
 import {
   normalizeScenario,
   sanitizeImageUrls,
+  sanitizeTranslations,
+  SUPPORTED_SCENARIO_LOCALES,
 } from "../shared/scenarioSchema.mjs";
 
 function supabaseUrl() {
   return (process.env.SUPABASE_URL || "").trim();
 }
 
-/** Prefer the new Supabase secret key (`sb_secret_...`). Legacy service_role JWT still accepted temporarily. */
 function supabaseSecretKey() {
   return (
     process.env.SUPABASE_SECRET_KEY ||
@@ -22,7 +23,6 @@ export function isSupabaseConfigured() {
   return supabaseUrl().length > 0 && supabaseSecretKey().length > 0;
 }
 
-/** True when scenarios.image_urls exists (migration 004). File mode always ready. */
 export async function checkImageUrlsReady() {
   if (!isSupabaseConfigured()) return true;
   try {
@@ -31,7 +31,6 @@ export async function checkImageUrlsReady() {
     if (!error) return true;
     const msg = String(error.message || "");
     if (/image_urls|column|42703/i.test(msg)) return false;
-    // Other errors (network) — don't claim schema is missing
     console.warn("[db] image_urls probe:", msg);
     return true;
   } catch (e) {
@@ -79,6 +78,7 @@ export function rowToScenario(row) {
       tags: Array.isArray(row.tags) ? row.tags : [],
       image_urls,
       image_url: image_urls[0] || "",
+      translations: row.translations && typeof row.translations === "object" ? row.translations : {},
       confluence_page_id:
         typeof row.confluence_page_id === "string" ? row.confluence_page_id : "",
       confluence_page_url:
@@ -91,13 +91,38 @@ export function rowToScenario(row) {
   );
 }
 
+function derivePrimaryFields(payload, translations) {
+  const preferred = typeof payload?.primary_language === "string"
+    ? payload.primary_language
+    : null;
+  const order = [preferred, "en", "de", "sq"].filter(
+    (l, i, arr) => l && SUPPORTED_SCENARIO_LOCALES.includes(l) && arr.indexOf(l) === i
+  );
+  for (const lng of order) {
+    const slot = translations[lng];
+    if (slot && (slot.title || "").trim() && (slot.scenario || "").trim() && (slot.solution || "").trim()) {
+      return {
+        title: slot.title,
+        scenario: slot.scenario,
+        solution: slot.solution,
+        tags: slot.tags,
+      };
+    }
+  }
+  return {
+    title: (payload?.title || "").toString(),
+    scenario: (payload?.scenario || "").toString(),
+    solution: (payload?.solution || "").toString(),
+    tags: Array.isArray(payload?.tags) ? payload.tags : [],
+  };
+}
+
 function scenarioImageFields(payload) {
   const fromArray = Array.isArray(payload?.image_urls) ? payload.image_urls : null;
   const legacy =
     typeof payload?.image_url === "string" && payload.image_url.trim()
       ? payload.image_url.trim()
       : "";
-  // Empty array must not wipe a legacy image_url — treat [] like "unset".
   const raw =
     fromArray && fromArray.length > 0
       ? fromArray
@@ -286,14 +311,17 @@ export async function insertScenario(payload) {
   const sb = getSupabase();
   const category_slug = await resolveCategorySlug(payload.category);
   const images = scenarioImageFields(payload);
+  const translations = sanitizeTranslations(payload.translations);
+  const primary = derivePrimaryFields(payload, translations);
   const { data, error } = await sb
     .from("scenarios")
     .insert({
       category_slug,
-      title: payload.title.trim(),
-      situation: payload.scenario.trim(),
-      solution: payload.solution.trim(),
-      tags: payload.tags ?? [],
+      title: primary.title.trim(),
+      situation: primary.scenario.trim(),
+      solution: primary.solution.trim(),
+      tags: primary.tags,
+      translations,
       image_url: images.image_url,
       image_urls: images.image_urls,
       confluence_page_id: payload.confluence_page_id || null,
@@ -315,12 +343,15 @@ export async function updateScenario(id, payload) {
 
   const category_slug = await resolveCategorySlug(payload.category);
   const images = scenarioImageFields(payload);
+  const translations = sanitizeTranslations(payload.translations);
+  const primary = derivePrimaryFields(payload, translations);
   const updates = {
     category_slug,
-    title: payload.title.trim(),
-    situation: payload.scenario.trim(),
-    solution: payload.solution.trim(),
-    tags: payload.tags ?? [],
+    title: primary.title.trim(),
+    situation: primary.scenario.trim(),
+    solution: primary.solution.trim(),
+    tags: primary.tags,
+    translations,
     image_url: images.image_url,
     image_urls: images.image_urls,
     confluence_page_id: payload.confluence_page_id || null,
@@ -358,10 +389,6 @@ async function getScenarioById(id) {
   return rowToScenario(data);
 }
 
-/**
- * Employee-visible Confluence pages: only those linked from a currently-published
- * scenario. Used to gate GET /api/confluence/page/:id for anonymous callers.
- */
 export async function isConfluencePagePublic(pageId) {
   const clean = String(pageId || "").trim();
   if (!clean) return false;

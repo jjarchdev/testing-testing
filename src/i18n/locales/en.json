@@ -17,63 +17,63 @@
   "privacy": {
     "back": "← Back",
     "title": "Privacy notice",
-    "updated": "Last updated: {{date}}",
-    "controllerHeading": "Data controller",
-    "controllerBody": "{{org}} is the data controller for this application. Contact: {{email}}.",
-    "whatWeProcessHeading": "What we process",
-    "whatWeProcessLead": "This app processes the following categories of personal data:",
+    "updated": "Last updated {{date}}",
+    "controllerHeading": "Who runs this",
+    "controllerBody": "{{org}} runs this playbook and is responsible for the data it holds. If you have a question, write to {{email}} — a real person will read it.",
+    "whatWeProcessHeading": "What we actually store",
+    "whatWeProcessLead": "We try to store as little as possible. Here's the full list:",
     "wp": {
-      "admin": "Admin credentials (username / password) provided via server environment variables.",
-      "session": "A short-lived session cookie (qm_admin) containing only an admin role marker — no personal identifiers.",
-      "ip": "IP addresses of failed login attempts, held in memory for up to 15 minutes for rate limiting.",
-      "confluence": "For admins who connect Confluence: the connected account's email or display name, Confluence site metadata, and access/refresh tokens (encrypted at rest).",
-      "content": "Whatever admins choose to write in scenarios, categories, tags, and images. Admins should avoid including personal data about identifiable individuals unless there is a lawful basis."
+      "admin": "Admin email addresses — used to sign you in and to know who invited whom. Passwords go straight to Supabase Auth and are hashed there; we never see them in plain text.",
+      "session": "A short session cookie (called qm_admin) that just remembers you're signed in. It contains an admin marker and your email — nothing else.",
+      "ip": "If a sign-in fails, we hold the IP address in memory for 15 minutes so we can slow down brute-force attempts. That's it.",
+      "confluence": "If you connect a Confluence account, we keep the site name, your Atlassian email, and the access token. The token is encrypted before it touches the database.",
+      "content": "Whatever admins type into scenarios, categories and tags, and any images they upload. If you're writing about a person, please have a good reason."
     },
-    "noEmployeeTracking": "Employees who read scenarios are not required to sign in and no analytics, tracking cookies, or third-party trackers are used.",
-    "purposeHeading": "Purposes",
+    "noEmployeeTracking": "Employees who just read the playbook don't sign in and aren't tracked. No analytics, no advertising, no third-party scripts.",
+    "purposeHeading": "Why we hold each thing",
     "purpose": {
-      "admin": "Administer procedure content (create/edit/publish scenarios).",
-      "security": "Rate-limit login attempts and protect the account from brute force.",
-      "confluence": "Fetch and display Confluence page content that admins choose to link to a scenario."
+      "admin": "So admins can sign in and edit the playbook.",
+      "security": "So we can stop someone hammering the sign-in page.",
+      "confluence": "So the linked Confluence page shows up inside the scenario for your team."
     },
-    "legalBasisHeading": "Legal basis (GDPR Art 6)",
-    "legalBasisBody": "Legitimate interest for administering procedures and securing access; consent from the admin who chooses to connect a Confluence account.",
-    "retentionHeading": "Retention",
+    "legalBasisHeading": "Legal basis",
+    "legalBasisBody": "Legitimate interest for running the playbook and keeping it secure. If you choose to connect Confluence, that's on your consent — disconnect any time from the admin panel.",
+    "retentionHeading": "How long we keep it",
     "retention": {
-      "session": "Session cookie: 8 hours or until logout.",
-      "ip": "Failed-login IP counters: 15 minutes.",
-      "content": "Scenario and category content: until the admin deletes it. Deleting a scenario also removes its uploaded images.",
-      "tokens": "Confluence tokens: until the admin disconnects."
+      "session": "Sign-in cookie: 8 hours or until you log out.",
+      "ip": "Failed-login counters: 15 minutes.",
+      "content": "Scenario content, categories, and images: until an admin deletes them. Deleting a scenario also deletes its images.",
+      "tokens": "Confluence tokens: until an admin clicks Disconnect."
     },
-    "subprocessorsHeading": "Subprocessors",
+    "subprocessorsHeading": "Who else touches the data",
     "sub": {
-      "supabase": "Supabase — database and object storage. Data Processing Addendum available at supabase.com/legal/dpa.",
-      "render": "Render — application hosting. DPA at render.com/legal/dpa.",
-      "atlassian": "Atlassian — only when Confluence is connected. DPA at atlassian.com/legal/data-processing-addendum."
+      "supabase": "Supabase — hosts the database, image storage, and sign-in. Their DPA: supabase.com/legal/dpa",
+      "render": "Render — hosts the app itself. Their DPA: render.com/legal/dpa",
+      "atlassian": "Atlassian — only if an admin connects Confluence. Their DPA: atlassian.com/legal/data-processing-addendum"
     },
-    "transfersBody": "If Supabase or Render regions are outside the EEA, transfers are covered by the EU Standard Contractual Clauses in the respective DPAs. Prefer EU regions (Frankfurt / Ireland) where possible.",
+    "transfersBody": "We recommend picking EU regions in Supabase and Render (Frankfurt or Ireland) so data stays in the EEA. If it leaves, it does so under the standard EU contract clauses in the DPAs above.",
     "cookiesHeading": "Cookies",
-    "cookiesBody": "Only one strictly-necessary cookie is used: qm_admin, an httpOnly session cookie set after admin login. No analytics or advertising cookies. Consent banner not required under ePrivacy for strictly-necessary cookies.",
-    "securityHeading": "Security measures (Art 32)",
+    "cookiesBody": "One cookie: qm_admin. Only set after you sign in as admin. Employees never get a cookie. We don't use analytics or advertising cookies. Because the one cookie is strictly needed for sign-in, no consent banner is legally required — the small notice at the bottom is just so you know.",
+    "securityHeading": "How we protect it",
     "sec": {
-      "https": "HTTPS enforced in production (HSTS enabled).",
-      "encRest": "Database encryption at rest via Supabase.",
-      "encTokens": "Confluence tokens encrypted with AES-256-GCM before storage.",
-      "access": "Access control via timing-safe password check and signed session cookie."
+      "https": "Everything is served over HTTPS in production, with HSTS on.",
+      "encRest": "Supabase encrypts the database and file storage at rest.",
+      "encTokens": "Confluence tokens are encrypted with AES-256-GCM before we store them.",
+      "access": "Only people on the admin allowlist can sign in. Sign-in uses Supabase Auth, and the session cookie is httpOnly and SameSite=Lax."
     },
     "rightsHeading": "Your rights",
-    "rightsBody": "Under GDPR you have the following rights over personal data about you:",
+    "rightsBody": "Under GDPR you can:",
     "rights": {
-      "access": "Access — request a copy of what we hold about you.",
-      "rectify": "Rectification — ask us to correct inaccurate data.",
-      "erase": "Erasure — ask us to delete data (subject to any legal retention duties).",
-      "portability": "Portability — request an export in machine-readable JSON.",
-      "object": "Object or restrict processing based on legitimate interest.",
-      "complain": "Complain to your national data protection authority."
+      "access": "Ask for a copy of what we hold about you.",
+      "rectify": "Ask us to correct something wrong.",
+      "erase": "Ask us to delete data (there may be a legal reason we can't for a while, but we'll tell you).",
+      "portability": "Ask for the data as a machine-readable JSON file — admins can export directly from the app.",
+      "object": "Ask us to stop or restrict a specific use of your data.",
+      "complain": "Complain to your national data-protection authority if we get this wrong."
     },
-    "contactBody": "Contact {{email}} to exercise any of these rights. We will respond within one month.",
-    "breachHeading": "Breach notification",
-    "breachBody": "If we detect a personal data breach that is likely to result in risk to your rights and freedoms we will notify the supervisory authority within 72 hours and inform affected individuals without undue delay."
+    "contactBody": "Email {{email}} for any of these. We'll get back to you within a month, usually much sooner.",
+    "breachHeading": "If something goes wrong",
+    "breachBody": "If we discover a data breach that could realistically hurt you, we'll tell the supervisory authority within 72 hours and let affected people know without unnecessary delay."
   },
   "employee": {
     "navLabel": "Scenario filters",
@@ -131,7 +131,6 @@
     "tabPassword": "Password",
     "tabMagic": "Magic link",
     "tabRegister": "Register",
-    "google": "Continue with Google",
     "sendMagic": "Send magic link",
     "sending": "Sending…",
     "magicSent": "Check your inbox for a sign-in link.",
@@ -146,7 +145,7 @@
     "supabaseUnavailable": "Sign-in service unavailable. Contact an admin.",
     "noSession": "No session returned by Supabase.",
     "bootstrapTitle": "Bootstrap sign-in (env vars)",
-    "bootstrapWarn": "Bootstrap sign-in is still enabled because no admins have been invited yet. Sign in below, invite yourself via Manage Admins, then remove ADMIN_PASSWORD from the server env."
+    "orSupabase": "Or sign in with Supabase Auth"
   },
   "reset": {
     "title": "Set a new password",
@@ -184,7 +183,17 @@
     "yesRevoke": "Yes, Revoke",
     "cancel": "Cancel",
     "revokeConfirm": "Revoke admin access for {{email}}?",
-    "you": "(you)"
+    "you": "(you)",
+    "inviteSent": "Invitation email sent to {{email}}. They'll set a password via the link.",
+    "inviteExisting": "{{email}} already has an account. We sent a sign-in link so they know they've been granted access.",
+    "inviteAdded": "{{email}} added to the allowlist.",
+    "inviteEmailFailed": "{{email}} was added to the allowlist, but the email couldn't be sent: {{reason}}. Ask them to sign up manually — the account will work once they do."
+  },
+  "cookie": {
+    "aria": "Cookie notice",
+    "body": "We only set one cookie — for admin sign-in. Employees don't get any cookies. No tracking, no ads.",
+    "readMore": "Details",
+    "ok": "Got it"
   },
   "admin": {
     "navLabel": "Admin navigation",
@@ -276,8 +285,12 @@
     "cancel": "Cancel",
     "needCategory": "Add a category first.",
     "fieldsRequired": "Title, scenario, and solution required.",
+    "needOneLanguage": "Fill in the title, scenario, and solution for at least one language.",
+    "partialWarn": "Some languages have only partial content and won't be shown to employees ({{langs}}). Save anyway?",
     "unsavedConfirm": "You have unsaved changes. Discard them?",
-    "confluencePage": "Confluence page (optional)"
+    "confluencePage": "Confluence page (optional)",
+    "languagesLabel": "Content languages",
+    "languagesHelp": "Fill in one, two, or all three. Employees see the version that matches their UI language, or the first one available."
   },
   "confluence": {
     "back": "← Back to Scenarios",

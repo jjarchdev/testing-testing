@@ -4,14 +4,6 @@ import LanguageSwitcher from "./LanguageSwitcher.jsx";
 import { localePath } from "./utils.js";
 import { styles } from "./styles.js";
 
-/**
- * Static privacy notice covering Art 13/14 GDPR. Keep it short and factual —
- * the source of truth is docs/PRIVACY.md at the repo root. Update both when
- * anything changes about processors, retention, or purposes.
- *
- * Deployers MUST edit the {{CONTROLLER}} / {{EMAIL}} placeholders below with
- * their organisation's real contact details before going live.
- */
 export default function PrivacyView() {
   const { t } = useTranslation();
   const { lng } = useParams();

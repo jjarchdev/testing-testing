@@ -10,8 +10,63 @@ import ConfluencePagePicker from "./ConfluencePagePicker.jsx";
 import { localePath } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
 import { styles } from "./styles.js";
+import { SUPPORTED_SCENARIO_LOCALES } from "../shared/scenarioSchema.mjs";
 
 const MAX_SCENARIO_IMAGES = 8;
+
+const EMPTY_LANG_SLOT = { title: "", scenario: "", solution: "", tags: "" };
+
+function extractTranslations(initial) {
+  const out = {};
+  for (const lng of SUPPORTED_SCENARIO_LOCALES) {
+    const slot = initial?.translations?.[lng];
+    if (slot) {
+      out[lng] = {
+        title: slot.title || "",
+        scenario: slot.scenario || "",
+        solution: slot.solution || "",
+        tags: Array.isArray(slot.tags) ? slot.tags.join(", ") : "",
+      };
+    } else {
+      out[lng] = { ...EMPTY_LANG_SLOT };
+    }
+  }
+  return out;
+}
+
+function slotHasContent(slot) {
+  return !!(slot && (slot.title.trim() || slot.scenario.trim() || slot.solution.trim() || slot.tags.trim()));
+}
+
+function translationsToApi(formTranslations) {
+  const out = {};
+  for (const lng of SUPPORTED_SCENARIO_LOCALES) {
+    const slot = formTranslations[lng];
+    if (!slot) continue;
+    if (!slotHasContent(slot)) continue;
+    out[lng] = {
+      title: slot.title.trim(),
+      scenario: slot.scenario,
+      solution: slot.solution,
+      tags: slot.tags
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+  }
+  return out;
+}
+
+function translationsEqual(a, b) {
+  for (const lng of SUPPORTED_SCENARIO_LOCALES) {
+    const x = a[lng] || EMPTY_LANG_SLOT;
+    const y = b[lng] || EMPTY_LANG_SLOT;
+    if (x.title !== y.title || x.scenario !== y.scenario || x.solution !== y.solution || x.tags !== y.tags) {
+      return false;
+    }
+  }
+  return true;
+}
 
 function scenarioImageUrls(scenario) {
   if (Array.isArray(scenario?.image_urls) && scenario.image_urls.length) {
@@ -220,15 +275,12 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
 }
 
 function ScenarioForm({ initial, categories, onSave, onCancel }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const defaultCategory = categories[0]?.label || "";
   const baseline = useMemo(
     () => ({
       category: initial?.category || defaultCategory,
-      title: initial?.title || "",
-      scenario: initial?.scenario || "",
-      solution: initial?.solution || "",
-      tags: initial?.tags?.join(", ") || "",
+      translations: extractTranslations(initial),
       image_urls: scenarioImageUrls(initial),
       confluence_page_id: initial?.confluence_page_id || "",
       confluence_page_url: initial?.confluence_page_url || "",
@@ -238,6 +290,12 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
     [initial, defaultCategory]
   );
   const [form, setForm] = useState(baseline);
+  const [activeLang, setActiveLang] = useState(() => {
+    const filled = SUPPORTED_SCENARIO_LOCALES.find((l) => slotHasContent(baseline.translations[l]));
+    if (filled) return filled;
+    const ui = (i18n.language || "en").toLowerCase();
+    return SUPPORTED_SCENARIO_LOCALES.includes(ui) ? ui : "en";
+  });
   const [urlDraft, setUrlDraft] = useState("");
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -254,10 +312,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
   const dirty = useMemo(
     () =>
       form.category !== baseline.category ||
-      form.title !== baseline.title ||
-      form.scenario !== baseline.scenario ||
-      form.solution !== baseline.solution ||
-      form.tags !== baseline.tags ||
+      !translationsEqual(form.translations, baseline.translations) ||
       !sameUrlList(form.image_urls, baseline.image_urls) ||
       form.confluence_page_id !== baseline.confluence_page_id ||
       form.confluence_page_url !== baseline.confluence_page_url ||
@@ -300,6 +355,17 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
   const patch = (k, v) => {
     setFormError("");
     setForm((f) => ({ ...f, [k]: v }));
+  };
+
+  const patchLang = (lng, k, v) => {
+    setFormError("");
+    setForm((f) => ({
+      ...f,
+      translations: {
+        ...f.translations,
+        [lng]: { ...f.translations[lng], [k]: v },
+      },
+    }));
   };
 
   const atImageCap = form.image_urls.length >= MAX_SCENARIO_IMAGES;
@@ -397,18 +463,40 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       setFormError(t("scenarioForm.needCategory"));
       return;
     }
-    if (!form.title.trim() || !form.scenario.trim() || !form.solution.trim()) {
-      setFormError(t("scenarioForm.fieldsRequired"));
+    const complete = SUPPORTED_SCENARIO_LOCALES.filter((lng) => {
+      const s = form.translations[lng];
+      return s.title.trim() && s.scenario.trim() && s.solution.trim();
+    });
+    if (complete.length === 0) {
+      setFormError(t("scenarioForm.needOneLanguage"));
+      return;
+    }
+    const partial = SUPPORTED_SCENARIO_LOCALES.filter(
+      (lng) =>
+        slotHasContent(form.translations[lng]) && !complete.includes(lng)
+    );
+    if (partial.length && !window.confirm(t("scenarioForm.partialWarn", { langs: partial.join(", ") }))) {
       return;
     }
     setFormError("");
     setBusy(true);
     try {
-      await onSave(form);
+      await onSave({
+        category: form.category,
+        translations: translationsToApi(form.translations),
+        primary_language: complete.includes(activeLang) ? activeLang : complete[0],
+        image_urls: form.image_urls,
+        confluence_page_id: form.confluence_page_id,
+        confluence_page_url: form.confluence_page_url,
+        confluence_page_title: form.confluence_page_title,
+        is_published: form.is_published,
+      });
     } finally {
       setBusy(false);
     }
   };
+
+  const LANG_LABELS = { en: "English", de: "Deutsch", sq: "Shqip" };
 
   return (
     <div style={styles.formWrap}>
@@ -440,40 +528,85 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         )}
       </select>
 
-      <label style={styles.label}>{t("scenarioForm.title")}</label>
+      <label style={styles.label}>{t("scenarioForm.languagesLabel")}</label>
+      <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>
+        {t("scenarioForm.languagesHelp")}
+      </p>
+      <div style={{ ...styles.tabRow, marginBottom: "0.85rem" }}>
+        {SUPPORTED_SCENARIO_LOCALES.map((lng) => {
+          const filled = slotHasContent(form.translations[lng]);
+          const isActive = lng === activeLang;
+          return (
+            <button
+              key={lng}
+              type="button"
+              onClick={() => setActiveLang(lng)}
+              style={{
+                ...styles.tabBtn,
+                ...(isActive ? styles.tabBtnActive : {}),
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+              aria-pressed={isActive}
+            >
+              {LANG_LABELS[lng]}
+              <span
+                aria-hidden
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: filled ? "#1abc9c" : "#3a4a5a",
+                }}
+              />
+            </button>
+          );
+        })}
+      </div>
+
+      <label style={styles.label}>
+        {t("scenarioForm.title")} ({LANG_LABELS[activeLang]})
+      </label>
       <input
         style={styles.input}
         placeholder={t("scenarioForm.title")}
-        value={form.title}
+        value={form.translations[activeLang].title}
         disabled={busy}
-        onChange={(e) => patch("title", e.target.value)}
+        onChange={(e) => patchLang(activeLang, "title", e.target.value)}
       />
 
-      <label style={styles.label}>{t("scenarioForm.scenario")}</label>
+      <label style={styles.label}>
+        {t("scenarioForm.scenario")} ({LANG_LABELS[activeLang]})
+      </label>
       <textarea
         style={{ ...styles.input, height: 100 }}
         placeholder={t("scenarioForm.situationPlaceholder")}
-        value={form.scenario}
+        value={form.translations[activeLang].scenario}
         disabled={busy}
-        onChange={(e) => patch("scenario", e.target.value)}
+        onChange={(e) => patchLang(activeLang, "scenario", e.target.value)}
       />
 
-      <label style={styles.label}>{t("scenarioForm.solution")}</label>
+      <label style={styles.label}>
+        {t("scenarioForm.solution")} ({LANG_LABELS[activeLang]})
+      </label>
       <textarea
         style={{ ...styles.input, height: 200 }}
         placeholder={t("scenarioForm.solutionPlaceholder")}
-        value={form.solution}
+        value={form.translations[activeLang].solution}
         disabled={busy}
-        onChange={(e) => patch("solution", e.target.value)}
+        onChange={(e) => patchLang(activeLang, "solution", e.target.value)}
       />
 
-      <label style={styles.label}>{t("scenarioForm.tags")}</label>
+      <label style={styles.label}>
+        {t("scenarioForm.tags")} ({LANG_LABELS[activeLang]})
+      </label>
       <input
         style={styles.input}
         placeholder={t("scenarioForm.tagsPlaceholder")}
-        value={form.tags}
+        value={form.translations[activeLang].tags}
         disabled={busy || uploading}
-        onChange={(e) => patch("tags", e.target.value)}
+        onChange={(e) => patchLang(activeLang, "tags", e.target.value)}
       />
 
       <label style={styles.label}>{t("scenarioForm.images")}</label>
@@ -690,7 +823,6 @@ export default function AdminView() {
     adminSession,
     setAdminSession,
     adminEmail,
-    adminIsBootstrap,
     serverConfig,
     notify,
     loadScenariosFromServer,
@@ -752,16 +884,10 @@ export default function AdminView() {
       notify(t("toast.notSignedIn"), "error");
       return;
     }
-    const tags = data.tags
-      .split(",")
-      .map((x) => x.trim())
-      .filter(Boolean);
     const body = {
       category: data.category,
-      title: data.title,
-      scenario: data.scenario,
-      solution: data.solution,
-      tags,
+      translations: data.translations || {},
+      primary_language: data.primary_language || null,
       is_published: data.is_published !== false,
       image_urls: Array.isArray(data.image_urls) ? data.image_urls : [],
       image_url:
@@ -1022,7 +1148,7 @@ export default function AdminView() {
         </button>
         {adminEmail ? (
           <div style={{ padding: "0 1rem 0.5rem", color: "#8899aa", fontSize: "0.75rem", textAlign: "center", wordBreak: "break-word" }}>
-            {adminIsBootstrap ? t("admin.bootstrapSession") : adminEmail}
+            {adminEmail}
           </div>
         ) : null}
         <button type="button" style={{ ...styles.backBtn, marginTop: "auto" }} onClick={handleLogout}>

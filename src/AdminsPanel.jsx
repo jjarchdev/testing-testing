@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useParams } from "react-router-dom";
 import { apiFetchWithAuth } from "./api.js";
 import { styles } from "./styles.js";
 
-/**
- * Manage the app_admins allowlist. Inviting an email only adds it to the
- * allowlist; the person must then sign up (or sign in) via Supabase Auth
- * themselves. Revoking flips is_active to false; the row stays for audit.
- */
 export default function AdminsPanel({ onBack, currentEmail }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { lng: routeLng } = useParams();
   const [admins, setAdmins] = useState(null);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState(null);
@@ -42,14 +40,34 @@ export default function AdminsPanel({ onBack, currentEmail }) {
     if (busy || !inviteEmail.trim()) return;
     setBusy(true);
     setError("");
+    setInfo("");
     try {
       const res = await apiFetchWithAuth("/api/admin/admins", {
         method: "POST",
-        body: JSON.stringify({ email: inviteEmail.trim() }),
+        body: JSON.stringify({
+          email: inviteEmail.trim(),
+          origin: window.location.origin,
+          language: (i18n.language || routeLng || "en").slice(0, 2).toLowerCase(),
+        }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || t("admins.inviteFailed"));
+        throw new Error(data?.error || t("admins.inviteFailed"));
+      }
+      const status = data?.admin?.email_status;
+      if (status === "sent") {
+        setInfo(t("admins.inviteSent", { email: inviteEmail.trim() }));
+      } else if (status === "existing_user_magic_link") {
+        setInfo(t("admins.inviteExisting", { email: inviteEmail.trim() }));
+      } else if (status === "failed") {
+        setError(
+          t("admins.inviteEmailFailed", {
+            email: inviteEmail.trim(),
+            reason: data?.admin?.email_error || "unknown",
+          })
+        );
+      } else {
+        setInfo(t("admins.inviteAdded", { email: inviteEmail.trim() }));
       }
       setInviteEmail("");
       await load();
@@ -106,6 +124,20 @@ export default function AdminsPanel({ onBack, currentEmail }) {
       </form>
 
       {error ? <div style={styles.formInlineError} role="alert">{error}</div> : null}
+      {info ? (
+        <div
+          style={{
+            padding: "0.6rem 0.85rem",
+            marginBottom: "0.75rem",
+            background: "rgba(26,107,74,0.15)",
+            color: "#1abc9c",
+            borderRadius: 6,
+            fontSize: "0.9rem",
+          }}
+        >
+          {info}
+        </div>
+      ) : null}
 
       {admins === null ? (
         <div style={styles.empty}>{t("admins.loading")}</div>

@@ -5,12 +5,6 @@ import { getSupabaseAuth } from "./supabase.js";
 import { localePath } from "./utils.js";
 import { styles } from "./styles.js";
 
-/**
- * Reached from Supabase's password-reset email. Supabase drops a recovery
- * token in the URL fragment; the client SDK picks it up automatically when
- * detectSessionInUrl is enabled, so by the time we mount we have an authed
- * session and can call updateUser to set the new password.
- */
 export default function AdminReset() {
   const { t } = useTranslation();
   const { lng } = useParams();

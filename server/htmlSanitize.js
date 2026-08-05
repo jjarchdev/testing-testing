@@ -1,15 +1,3 @@
-// Very small HTML sanitizer for Confluence "view" HTML.
-// Allowlist-based: unknown tags are stripped (contents kept), event handlers
-// and `javascript:` URIs are removed, style attributes are dropped.
-//
-// Tuned for the subset Confluence emits (text, headings, lists, tables,
-// code blocks, images, links). External images / links from the Confluence
-// host are preserved; everything else in an href/src is validated against
-// http/https.
-//
-// This is intentionally dependency-free. If you need broader coverage,
-// swap in `sanitize-html` and call it from here.
-
 const ALLOWED_TAGS = new Set([
   "p", "br", "hr", "div", "span",
   "h1", "h2", "h3", "h4", "h5", "h6",
@@ -53,7 +41,6 @@ function isSafeUrl(url) {
   if (!url) return false;
   const trimmed = String(url).trim();
   if (!trimmed) return false;
-  // Reject anything with control chars or newlines
   if (/[\x00-\x1f\x7f]/.test(trimmed)) return false;
   return SAFE_URL_RE.test(trimmed);
 }
@@ -62,7 +49,6 @@ function renderAttrs(tag, attrs) {
   const parts = [];
   for (const [name, valueRaw] of Object.entries(attrs)) {
     const lower = name.toLowerCase();
-    // Never allow event handlers or style
     if (lower.startsWith("on") || lower === "style") continue;
     const perTag = ALLOWED_ATTRS[tag];
     const allowed = GLOBAL_ATTRS.has(lower) || (perTag && perTag.has(lower));
@@ -85,7 +71,6 @@ function renderAttrs(tag, attrs) {
   return parts.length ? " " + parts.join(" ") : "";
 }
 
-// Extremely small HTML tokenizer. Handles <tag ...>, </tag>, <!-- --> and text.
 function* tokenize(html) {
   let i = 0;
   const n = html.length;
@@ -153,13 +138,11 @@ export function sanitizeHtml(input) {
       continue;
     }
     if (tok.type === "open") {
-      // Drop <script> / <style> and their content entirely.
       if (tok.name === "script" || tok.name === "style") {
         scriptDepth += 1;
         continue;
       }
       if (!ALLOWED_TAGS.has(tok.name)) {
-        // Keep children, drop the tag itself.
         dropStack.push(tok.name);
         continue;
       }
@@ -178,12 +161,10 @@ export function sanitizeHtml(input) {
         continue;
       }
       if (!ALLOWED_TAGS.has(tok.name)) {
-        // Match a dropped opener if present
         const idx = dropStack.lastIndexOf(tok.name);
         if (idx >= 0) dropStack.splice(idx, 1);
         continue;
       }
-      // Only close if it matches the top-of-stack somewhere
       const idx = stack.lastIndexOf(tok.name);
       if (idx < 0) continue;
       while (stack.length > idx) {
@@ -192,7 +173,6 @@ export function sanitizeHtml(input) {
       }
     }
   }
-  // Close leftovers
   while (stack.length) {
     out.push(`</${stack.pop()}>`);
   }

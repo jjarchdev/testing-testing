@@ -58,8 +58,6 @@ export default function ConfluenceManager({ onBack, onChanged }) {
     setMessage("");
     try {
       const url = await startConfluenceCloudConnect();
-      // Open in the same window so users see the Atlassian consent screen
-      // and end up back on our /api/confluence/callback/cloud page.
       window.location.assign(url);
     } catch (err) {
       setMessage(err?.message || t("confluence.connectFailed"));

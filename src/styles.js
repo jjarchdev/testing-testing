@@ -6,7 +6,6 @@ export const styles = {
     color: "#eaf0fb",
     position: "relative",
   },
-  // Confluence integration ------------------------------------------------
   confluenceBox: {
     marginTop: "1.5rem",
     padding: "1.25rem",

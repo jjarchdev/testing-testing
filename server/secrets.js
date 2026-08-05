@@ -6,15 +6,6 @@ import {
   timingSafeEqual,
 } from "crypto";
 
-// AES-256-GCM at-rest encryption for Confluence tokens.
-//
-// Key preference:
-//   1. CONFLUENCE_ENCRYPTION_KEY (32 raw bytes, base64 or hex, or any string >= 32 chars)
-//   2. Derived from JWT_SECRET via HKDF (dev / single-secret setups)
-//
-// The derived form is fine when JWT_SECRET is strong; rotate it and stored tokens
-// become undecryptable (users would just reconnect Confluence).
-
 const KEY_LEN = 32;
 const IV_LEN = 12;
 const TAG_LEN = 16;
@@ -33,7 +24,6 @@ function decodeKeyMaterial(raw) {
   } catch {
     /* ignore */
   }
-  // raw string long enough — hash-derive
   if (s.length >= KEY_LEN) {
     return Buffer.from(hkdfSync("sha256", Buffer.from(s), HKDF_SALT, HKDF_INFO, KEY_LEN));
   }
@@ -71,7 +61,6 @@ export function encryptionKeySource() {
   }
 }
 
-/** Returns base64(iv || tag || ciphertext). */
 export function encryptSecret(plaintext) {
   const key = getEncryptionKey();
   const iv = randomBytes(IV_LEN);
@@ -95,12 +84,10 @@ export function decryptSecret(payload) {
   return buf.toString("utf8");
 }
 
-/** Constant-time equality for two same-length strings. */
 export function safeStringEquals(a, b) {
   const bufA = Buffer.from(String(a || ""), "utf8");
   const bufB = Buffer.from(String(b || ""), "utf8");
   if (bufA.length !== bufB.length) {
-    // Still run a comparison to keep timing similar.
     timingSafeEqual(bufA, bufA);
     return false;
   }

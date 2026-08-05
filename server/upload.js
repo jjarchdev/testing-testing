@@ -38,12 +38,6 @@ function withTimeout(promise, ms, message) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-/**
- * Ensure the public scenario-images bucket exists (idempotent).
- * Service-role / secret key can create buckets; employees need public read.
- * Returns quietly if listing is denied but the bucket may already exist —
- * the subsequent upload will surface a clear error if it does not.
- */
 export async function ensureScenarioImagesBucket(sb = getSupabase()) {
   if (!sb) throw new Error("Supabase is not configured");
 
@@ -139,7 +133,6 @@ export async function saveUploadedImage(file) {
   return `/uploads/${name}`;
 }
 
-/** Collect image URLs from a scenario record (array or legacy single). */
 export function imageUrlsFromScenario(scenario) {
   if (!scenario) return [];
   if (Array.isArray(scenario.image_urls) && scenario.image_urls.length) {
@@ -159,10 +152,6 @@ export function urlsRemovedFromScenario(previous, nextUrls) {
   return [...before].filter((u) => !after.has(u));
 }
 
-/**
- * Extract object path inside scenario-images from a public Storage URL.
- * Returns null for external URLs or local /uploads paths.
- */
 export function storageObjectPathFromPublicUrl(url) {
   if (typeof url !== "string" || !url.trim()) return null;
   try {
@@ -178,10 +167,6 @@ export function storageObjectPathFromPublicUrl(url) {
   }
 }
 
-/**
- * Best-effort delete of stored images. Only removes objects in scenario-images
- * or local /uploads files. External URLs are ignored. Errors are logged, not thrown.
- */
 export async function removeStoredImages(urls) {
   const list = Array.isArray(urls) ? urls : [];
   const storagePaths = [];

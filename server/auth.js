@@ -1,20 +1,9 @@
-// Supabase Auth verification + admin allowlist.
-//
-// The app does not trust Supabase Auth's JWT directly for authorisation.
-// Instead it exchanges a verified Supabase access token for the app's own
-// httpOnly qm_admin cookie, gated by an allowlist stored in public.app_admins.
-
 import { getSupabase, isSupabaseConfigured } from "./db.js";
 
 export function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
-/**
- * Verify a Supabase Auth access token. Returns { email, id } on success,
- * or null if the token is invalid, expired, or the caller isn't configured
- * for Supabase.
- */
 export async function verifySupabaseAccessToken(accessToken) {
   if (!accessToken || typeof accessToken !== "string") return null;
   if (!isSupabaseConfigured()) return null;
@@ -28,10 +17,6 @@ export async function verifySupabaseAccessToken(accessToken) {
   }
 }
 
-/**
- * True if this email appears in public.app_admins with is_active = true.
- * Case-insensitive.
- */
 export async function isAllowedAdmin(email) {
   if (!isSupabaseConfigured()) return false;
   const normalized = normalizeEmail(email);
@@ -46,10 +31,6 @@ export async function isAllowedAdmin(email) {
   return !!(data && data.is_active !== false);
 }
 
-/**
- * True when the admin allowlist is empty. Used to gate bootstrap
- * (ADMIN_PASSWORD login only works while there are no real admins yet).
- */
 export async function isAllowlistEmpty() {
   if (!isSupabaseConfigured()) return true;
   const sb = getSupabase();
@@ -59,6 +40,24 @@ export async function isAllowlistEmpty() {
     .eq("is_active", true);
   if (error) throw error;
   return (count || 0) === 0;
+}
+
+export async function tryAutoBootstrap(email) {
+  if (!isSupabaseConfigured()) return false;
+  const normalized = normalizeEmail(email);
+  if (!normalized) return false;
+  const gate = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL || "");
+  if (gate && gate !== normalized) return false;
+  const empty = await isAllowlistEmpty();
+  if (!empty) return false;
+  const sb = getSupabase();
+  const { error } = await sb
+    .from("app_admins")
+    .insert({ email: normalized, invited_by: null, is_active: true });
+  if (error) {
+    return false;
+  }
+  return true;
 }
 
 export async function listAdmins() {
@@ -72,7 +71,7 @@ export async function listAdmins() {
   return data || [];
 }
 
-export async function inviteAdmin({ email, invitedBy }) {
+export async function inviteAdmin({ email, invitedBy, redirectTo }) {
   if (!isSupabaseConfigured()) {
     const err = new Error("Supabase is required to manage admins");
     err.status = 503;
@@ -85,7 +84,8 @@ export async function inviteAdmin({ email, invitedBy }) {
     throw err;
   }
   const sb = getSupabase();
-  const { data, error } = await sb
+
+  const { data: row, error: upsertError } = await sb
     .from("app_admins")
     .upsert(
       {
@@ -97,8 +97,40 @@ export async function inviteAdmin({ email, invitedBy }) {
     )
     .select("email, invited_by, invited_at, is_active")
     .single();
-  if (error) throw error;
-  return data;
+  if (upsertError) throw upsertError;
+
+  let emailStatus = "sent";
+  let emailError = null;
+  try {
+    const options = redirectTo ? { redirectTo } : {};
+    const { error: inviteError } = await sb.auth.admin.inviteUserByEmail(
+      normalized,
+      options
+    );
+    if (inviteError) {
+      const msg = String(inviteError.message || "");
+      if (/already been registered|already exists|user_already_exists/i.test(msg)) {
+        const { error: magicError } = await sb.auth.signInWithOtp({
+          email: normalized,
+          options: redirectTo ? { emailRedirectTo: redirectTo } : {},
+        });
+        if (magicError) {
+          emailStatus = "failed";
+          emailError = magicError.message || String(magicError);
+        } else {
+          emailStatus = "existing_user_magic_link";
+        }
+      } else {
+        emailStatus = "failed";
+        emailError = msg;
+      }
+    }
+  } catch (e) {
+    emailStatus = "failed";
+    emailError = e?.message || String(e);
+  }
+
+  return { ...row, email_status: emailStatus, email_error: emailError };
 }
 
 export async function revokeAdmin(email) {
@@ -122,9 +154,6 @@ export async function revokeAdmin(email) {
   return { ok: true };
 }
 
-/**
- * True when the app_admins table exists (migration 004 has been applied).
- */
 export async function isAdminsTableReady() {
   if (!isSupabaseConfigured()) return true;
   try {

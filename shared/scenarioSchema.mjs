@@ -1,4 +1,8 @@
 export const MAX_SCENARIO_IMAGES = 8;
+export const SUPPORTED_SCENARIO_LOCALES = ["en", "de", "sq"];
+const TAG_MAX_LEN = 60;
+const TITLE_MAX_LEN = 240;
+const BODY_MAX_LEN = 20_000;
 
 export function isScenarioRecord(s) {
   if (!s || typeof s !== "object") return false;
@@ -12,6 +16,9 @@ export function isScenarioRecord(s) {
   if (s.image_url != null && typeof s.image_url !== "string") return false;
   if (s.image_urls != null && !Array.isArray(s.image_urls)) return false;
   if (Array.isArray(s.image_urls) && !s.image_urls.every((u) => typeof u === "string")) {
+    return false;
+  }
+  if (s.translations != null && (typeof s.translations !== "object" || Array.isArray(s.translations))) {
     return false;
   }
   return true;
@@ -34,16 +41,11 @@ function sanitizeImageUrl(value, options = {}) {
   return "";
 }
 
-/** True when the value is a site-relative upload path that only works with local disk storage. */
 export function isLocalUploadPath(value) {
   if (value == null) return false;
   return String(value).trim().startsWith("/uploads/");
 }
 
-/**
- * Normalize a list of image URLs (or a legacy single string).
- * Dedupes, sanitizes, and caps at MAX_SCENARIO_IMAGES.
- */
 export function sanitizeImageUrls(listOrSingle, options = {}) {
   const max = Number.isFinite(options.max) ? options.max : MAX_SCENARIO_IMAGES;
   let raw = [];
@@ -68,7 +70,6 @@ export function sanitizeImageUrls(listOrSingle, options = {}) {
 function collectRawImageInputs(s) {
   if (Array.isArray(s?.image_urls) && s.image_urls.length) return s.image_urls;
   if (typeof s?.image_url === "string" && s.image_url.trim()) return [s.image_url];
-  // Explicit empty array with no legacy url → no images
   if (Array.isArray(s?.image_urls)) return [];
   return [];
 }
@@ -77,8 +78,6 @@ function sanitizeConfluencePageId(value) {
   if (value == null) return "";
   const s = String(value).trim();
   if (!s) return "";
-  // Atlassian page ids are numeric; DC ids are also numeric. Allow the safe
-  // subset [a-zA-Z0-9_.:-] to cover both, plus any future id format.
   if (!/^[a-zA-Z0-9_.:-]{1,64}$/.test(s)) return "";
   return s;
 }
@@ -96,9 +95,73 @@ function sanitizeConfluenceUrl(value) {
   return "";
 }
 
+function sanitizeTags(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of list) {
+    if (typeof raw !== "string") continue;
+    const t = raw.trim().slice(0, TAG_MAX_LEN);
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+    if (out.length >= 30) break;
+  }
+  return out;
+}
+
+export function sanitizeTranslation(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const title = typeof raw.title === "string" ? raw.title.trim().slice(0, TITLE_MAX_LEN) : "";
+  const scenario =
+    typeof raw.scenario === "string" ? raw.scenario.slice(0, BODY_MAX_LEN) : "";
+  const solution =
+    typeof raw.solution === "string" ? raw.solution.slice(0, BODY_MAX_LEN) : "";
+  const tags = sanitizeTags(raw.tags);
+  if (!title.trim() && !scenario.trim() && !solution.trim()) return null;
+  return { title, scenario, solution, tags };
+}
+
+export function sanitizeTranslations(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const lng of SUPPORTED_SCENARIO_LOCALES) {
+    const slot = sanitizeTranslation(raw[lng]);
+    if (slot) out[lng] = slot;
+  }
+  return out;
+}
+
+export function pickTranslation(scenario, preferred) {
+  if (!scenario) return null;
+  const t = scenario.translations || {};
+  const order = [
+    preferred,
+    "en",
+    "de",
+    "sq",
+  ].filter((lng, i, arr) => lng && arr.indexOf(lng) === i);
+  for (const lng of order) {
+    const slot = t[lng];
+    if (slot && (slot.title || "").trim() && (slot.scenario || "").trim() && (slot.solution || "").trim()) {
+      return { ...slot, _language: lng };
+    }
+  }
+  // Fallback to the default columns.
+  const fallback = {
+    title: scenario.title || "",
+    scenario: scenario.scenario || "",
+    solution: scenario.solution || "",
+    tags: Array.isArray(scenario.tags) ? scenario.tags : [],
+    _language: null,
+  };
+  return fallback;
+}
+
 export function normalizeScenario(s, options = {}) {
   if (!isScenarioRecord(s)) return null;
   const image_urls = sanitizeImageUrls(collectRawImageInputs(s), options);
+  const translations = sanitizeTranslations(s.translations);
   const out = {
     id: Number(s.id),
     category: s.category,
@@ -108,6 +171,7 @@ export function normalizeScenario(s, options = {}) {
     tags: s.tags.map((t) => String(t)),
     image_urls,
     image_url: image_urls[0] || "",
+    translations,
     confluence_page_id: sanitizeConfluencePageId(s.confluence_page_id),
     confluence_page_url: sanitizeConfluenceUrl(s.confluence_page_url),
     confluence_page_title:

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import LanguageSwitcher from "./LanguageSwitcher.jsx";
 import ConfluenceView from "./ConfluenceView.jsx";
 import { useAppData } from "./AppData.jsx";
+import { pickTranslation } from "../shared/scenarioSchema.mjs";
 import { ALL_FILTER, accentForCategory, buildCategoryCounts, localePath } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
 import { pushRecentId, readRecentIds } from "./recent.js";
@@ -21,28 +22,96 @@ function normalizeSearchText(value) {
 function scenarioMatchesQuery(scenario, rawQuery) {
   const q = normalizeSearchText(rawQuery);
   if (!q) return true;
-  const haystack = normalizeSearchText(
-    [
-      scenario.title,
-      scenario.category,
-      scenario.scenario,
-      scenario.solution,
-      ...(Array.isArray(scenario.tags) ? scenario.tags : []),
-    ].join(" ")
-  );
+  const parts = [scenario.title, scenario.category, scenario.scenario, scenario.solution];
+  if (Array.isArray(scenario.tags)) parts.push(...scenario.tags);
+  const tr = scenario.translations || {};
+  for (const lng of Object.keys(tr)) {
+    const slot = tr[lng];
+    if (!slot) continue;
+    parts.push(slot.title, slot.scenario, slot.solution);
+    if (Array.isArray(slot.tags)) parts.push(...slot.tags);
+  }
+  const haystack = normalizeSearchText(parts.filter(Boolean).join(" "));
   return q.split(" ").filter(Boolean).every((token) => haystack.includes(token));
 }
 
-function parseSteps(solution) {
-  return String(solution || "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line, i) => {
-      const num = line.match(/^(\d+)\./)?.[1];
-      const text = line.replace(/^\d+\.\s*/, "");
-      return { key: `${i}-${text.slice(0, 24)}`, num: num || String(i + 1), text };
+function parseSolutionBlocks(solution) {
+  const text = String(solution || "").replace(/\r\n?/g, "\n");
+  if (!text.trim()) return [];
+  const lines = text.split("\n");
+  const NUM_RE = /^\s*(\d+)\.\s+(.+)$/;
+  const blocks = [];
+  let paraBuf = [];
+  let stepBuf = [];
+  const flushPara = () => {
+    if (!paraBuf.length) return;
+    const joined = paraBuf.join("\n").trim();
+    if (joined) blocks.push({ type: "para", text: joined, key: `p-${blocks.length}` });
+    paraBuf = [];
+  };
+  const flushSteps = () => {
+    if (!stepBuf.length) return;
+    blocks.push({
+      type: "steps",
+      steps: stepBuf,
+      key: `s-${blocks.length}`,
     });
+    stepBuf = [];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const m = line.match(NUM_RE);
+    if (m) {
+      flushPara();
+      stepBuf.push({
+        key: `${i}-${m[2].slice(0, 24)}`,
+        num: m[1],
+        text: m[2].trim(),
+      });
+      continue;
+    }
+    if (line.trim() === "") {
+      flushPara();
+      flushSteps();
+      continue;
+    }
+    flushSteps();
+    paraBuf.push(line);
+  }
+  flushPara();
+  flushSteps();
+  return blocks;
+}
+
+function totalStepCount(blocks) {
+  return blocks.reduce((n, b) => n + (b.type === "steps" ? b.steps.length : 0), 0);
+}
+
+function ParagraphText({ text, baseStyle }) {
+  const paras = String(text || "")
+    .replace(/\r\n?/g, "\n")
+    .split(/\n{2,}/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!paras.length) return null;
+  return (
+    <>
+      {paras.map((para, i) => {
+        const lines = para.split("\n");
+        return (
+          <p key={i} style={baseStyle}>
+            {lines.map((ln, j) => (
+              <span key={j}>
+                {ln}
+                {j < lines.length - 1 ? <br /> : null}
+              </span>
+            ))}
+          </p>
+        );
+      })}
+    </>
+  );
 }
 
 function scenarioImageUrls(scenario) {
@@ -55,12 +124,14 @@ function scenarioImageUrls(scenario) {
   return [];
 }
 
-function ScenarioCard({ scenario, onSelect, openLabel }) {
+function ScenarioCard({ scenario, view, onSelect, openLabel }) {
   const color = accentForCategory(scenario.category);
-  const text = scenario.scenario;
+  const text = view.scenario;
   const snippet = text.length > 100 ? `${text.slice(0, 100)}…` : text;
   const images = scenarioImageUrls(scenario);
   const imageUrl = images[0] || "";
+  const title = view.title || scenario.title;
+  const tags = Array.isArray(view.tags) && view.tags.length ? view.tags : scenario.tags;
 
   return (
     <div
@@ -108,10 +179,10 @@ function ScenarioCard({ scenario, onSelect, openLabel }) {
         </div>
       ) : null}
       <div style={styles.cardCat}>{scenario.category}</div>
-      <h3 style={styles.cardTitle}>{scenario.title}</h3>
+      <h3 style={styles.cardTitle}>{title}</h3>
       <p style={styles.cardSnippet}>{snippet}</p>
       <div style={styles.cardTags}>
-        {scenario.tags.map((tag, i) => (
+        {tags.map((tag, i) => (
           <span key={`${tag}-${i}`} style={styles.tag}>
             {tag}
           </span>
@@ -122,12 +193,15 @@ function ScenarioCard({ scenario, onSelect, openLabel }) {
   );
 }
 
-function ScenarioDetail({ scenario, onBack, onNotify }) {
+function ScenarioDetail({ scenario, view, onBack, onNotify }) {
   const { t } = useTranslation();
-  const steps = useMemo(() => parseSteps(scenario.solution), [scenario.solution]);
+  const blocks = useMemo(() => parseSolutionBlocks(view.solution), [view.solution]);
+  const stepTotal = useMemo(() => totalStepCount(blocks), [blocks]);
   const images = useMemo(() => scenarioImageUrls(scenario), [scenario]);
   const [checked, setChecked] = useState(() => ({}));
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const title = view.title || scenario.title;
+  const tags = Array.isArray(view.tags) && view.tags.length ? view.tags : scenario.tags;
 
   useEffect(() => {
     setChecked({});
@@ -149,20 +223,24 @@ function ScenarioDetail({ scenario, onBack, onNotify }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [lightboxIndex, images.length]);
 
-  const doneCount = steps.reduce((n, step, i) => n + (checked[i] ? 1 : 0), 0);
+  const doneCount = Object.values(checked).filter(Boolean).length;
 
   const copyProcedure = async () => {
-    const body = [
-      scenario.title,
-      "",
-      `${t("employee.situation")}:`,
-      scenario.scenario,
-      "",
-      `${t("employee.procedure")}:`,
-      ...steps.map((s) => `${s.num}. ${s.text}`),
-    ].join("\n");
+    const bodyParts = [title, ""];
+    if (view.scenario) {
+      bodyParts.push(`${t("employee.situation")}:`, view.scenario, "");
+    }
+    bodyParts.push(`${t("employee.procedure")}:`);
+    for (const b of blocks) {
+      if (b.type === "steps") {
+        for (const s of b.steps) bodyParts.push(`${s.num}. ${s.text}`);
+      } else {
+        bodyParts.push(b.text);
+      }
+      bodyParts.push("");
+    }
     try {
-      await navigator.clipboard.writeText(body);
+      await navigator.clipboard.writeText(bodyParts.join("\n").trim());
       onNotify(t("employee.copied"));
     } catch {
       onNotify(t("employee.copyFailed"), "error");
@@ -222,7 +300,7 @@ function ScenarioDetail({ scenario, onBack, onNotify }) {
       </div>
       <div style={styles.detailCat}>{scenario.category}</div>
       <h2 id="scenario-detail-title" style={styles.detailTitle}>
-        {scenario.title}
+        {title}
       </h2>
       {images.length > 0 ? (
         <div style={galleryStyle}>
@@ -324,56 +402,69 @@ function ScenarioDetail({ scenario, onBack, onNotify }) {
         <button type="button" style={styles.ghostBtn} onClick={() => window.print()}>
           {t("employee.print")}
         </button>
-        {steps.length > 0 ? (
+        {stepTotal > 0 ? (
           <span style={{ alignSelf: "center", color: "#8899aa", fontSize: "0.9rem", fontWeight: 600 }}>
-            {t("employee.stepsProgress", { done: doneCount, total: steps.length })}
+            {t("employee.stepsProgress", { done: doneCount, total: stepTotal })}
           </span>
         ) : null}
       </div>
 
-      <div style={styles.detailSection}>
-        <div style={styles.detailSectionLabel}>{t("employee.situation")}</div>
-        <p style={styles.detailBody}>{scenario.scenario}</p>
-      </div>
+      {view.scenario ? (
+        <div style={styles.detailSection}>
+          <div style={styles.detailSectionLabel}>{t("employee.situation")}</div>
+          <ParagraphText text={view.scenario} baseStyle={styles.detailBody} />
+        </div>
+      ) : null}
       <div style={styles.detailSection}>
         <div style={styles.detailSectionLabel}>{t("employee.procedure")}</div>
-        <ol style={styles.stepList}>
-          {steps.map((step, i) => (
-            <li key={step.key} style={styles.stepItem}>
-              <label
-                className="no-print"
-                style={{ display: "flex", alignItems: "center", marginRight: "0.25rem" }}
-              >
-                <input
-                  type="checkbox"
-                  checked={!!checked[i]}
-                  aria-label={t("employee.markStep")}
-                  onChange={(e) => setChecked((prev) => ({ ...prev, [i]: e.target.checked }))}
-                />
-              </label>
-              <span
-                style={{
-                  ...styles.stepNum,
-                  opacity: checked[i] ? 0.55 : 1,
-                }}
-              >
-                {step.num}
-              </span>
-              <span
-                style={{
-                  ...styles.stepText,
-                  textDecoration: checked[i] ? "line-through" : "none",
-                  opacity: checked[i] ? 0.65 : 1,
-                }}
-              >
-                {step.text}
-              </span>
-            </li>
-          ))}
-        </ol>
+        {blocks.map((block) =>
+          block.type === "steps" ? (
+            <ol key={block.key} style={styles.stepList}>
+              {block.steps.map((step) => {
+                const isChecked = !!checked[step.key];
+                return (
+                  <li key={step.key} style={styles.stepItem}>
+                    <label
+                      className="no-print"
+                      style={{ display: "flex", alignItems: "center", marginRight: "0.25rem" }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        aria-label={t("employee.markStep")}
+                        onChange={(e) =>
+                          setChecked((prev) => ({ ...prev, [step.key]: e.target.checked }))
+                        }
+                      />
+                    </label>
+                    <span
+                      style={{
+                        ...styles.stepNum,
+                        opacity: isChecked ? 0.55 : 1,
+                      }}
+                    >
+                      {step.num}
+                    </span>
+                    <span
+                      style={{
+                        ...styles.stepText,
+                        textDecoration: isChecked ? "line-through" : "none",
+                        opacity: isChecked ? 0.65 : 1,
+                      }}
+                    >
+                      {step.text}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <ParagraphText key={block.key} text={block.text} baseStyle={styles.detailBody} />
+          )
+        )}
       </div>
       <div style={styles.detailTags}>
-        {scenario.tags.map((tag, i) => (
+        {tags.map((tag, i) => (
           <span key={`${tag}-${i}`} style={styles.tagLarge}>
             {tag}
           </span>
@@ -391,10 +482,12 @@ function ScenarioDetail({ scenario, onBack, onNotify }) {
 }
 
 export default function EmployeeView() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { lng, scenarioId } = useParams();
   const navigate = useNavigate();
   const { scenarios, scenariosLoadError, loadScenariosFromServer, categories, notify } = useAppData();
+  const activeLng = i18n.language || lng || "en";
+  const viewFor = (s) => pickTranslation(s, activeLng);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterCategory, setFilterCategory] = useState(ALL_FILTER);
   const [recentIds, setRecentIds] = useState(() => readRecentIds());
@@ -676,7 +769,12 @@ export default function EmployeeView() {
             </button>
           </div>
         ) : selectedScenario ? (
-          <ScenarioDetail scenario={selectedScenario} onBack={closeDetail} onNotify={notify} />
+          <ScenarioDetail
+            scenario={selectedScenario}
+            view={viewFor(selectedScenario)}
+            onBack={closeDetail}
+            onNotify={notify}
+          />
         ) : (
           <>
             <div style={styles.mainHeader}>
@@ -697,6 +795,7 @@ export default function EmployeeView() {
                   <ScenarioCard
                     key={s.id}
                     scenario={s}
+                    view={viewFor(s)}
                     openLabel={t("employee.open")}
                     onSelect={() => openScenario(s)}
                   />

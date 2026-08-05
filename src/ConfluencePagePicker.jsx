@@ -3,11 +3,6 @@ import { useTranslation } from "react-i18next";
 import { fetchConfluenceStatus, searchConfluencePages } from "./api.js";
 import { styles } from "./styles.js";
 
-/**
- * Inline picker used inside the scenario form. Lets an admin search their
- * connected Confluence and pick a page to link to the current scenario.
- * Emits { id, url, title } via onPick.
- */
 export default function ConfluencePagePicker({ value, onPick, onClear }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState({ loading: true, connected: false });

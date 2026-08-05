@@ -41,15 +41,17 @@ const {
 const {
   normalizeScenario,
   sanitizeImageUrls,
+  sanitizeTranslations,
   isLocalUploadPath,
   MAX_SCENARIO_IMAGES,
+  SUPPORTED_SCENARIO_LOCALES,
   sanitizeConfluencePageId,
   sanitizeConfluenceUrl,
 } = await import("../shared/scenarioSchema.mjs");
 const { normalizeCategory } = await import("../shared/categoryMap.mjs");
 const { saveUploadedImage, UPLOADS_DIR, removeStoredImages, imageUrlsFromScenario, urlsRemovedFromScenario } =
   await import("./upload.js");
-const { safeStringEquals, encryptionKeySource } = await import("./secrets.js");
+const { encryptionKeySource, safeStringEquals } = await import("./secrets.js");
 const {
   cloudConfigured,
   completeCloudOauth,
@@ -63,25 +65,29 @@ const {
 const {
   verifySupabaseAccessToken,
   isAllowedAdmin,
-  isAllowlistEmpty,
+  tryAutoBootstrap,
   listAdmins,
   inviteAdmin,
   revokeAdmin,
-  isAdminsTableReady,
   normalizeEmail,
 } = await import("./auth.js");
 
 const isProd = process.env.NODE_ENV === "production";
-const adminPassword = (process.env.ADMIN_PASSWORD || "").trim() || (!isProd ? "admin123" : "");
+const adminPassword =
+  (process.env.ADMIN_PASSWORD || "").trim() || (!isProd ? "admin123" : "");
 const adminUser = (process.env.ADMIN_USER || "").trim();
 const jwtSecret =
   (process.env.JWT_SECRET || "").trim() || (!isProd ? "dev-jwt-secret" : "");
 const ADMIN_COOKIE = "qm_admin";
 const SESSION_MAX_AGE_SEC = 8 * 60 * 60;
 
-function authConfigured() {
-  if (!isProd) return true;
+function envLoginAvailable() {
   return adminPassword.length > 0 && jwtSecret.length > 0;
+}
+
+function authConfigured() {
+  if (!jwtSecret) return false;
+  return envLoginAvailable() || isSupabaseConfigured();
 }
 
 function storageMode() {
@@ -133,7 +139,6 @@ function verifyAdminToken(token) {
   }
 }
 
-/** Returns the admin's email if their cookie is valid, else null. */
 function currentAdminEmail(req) {
   const payload = verifyAdminToken(readAdminToken(req));
   return payload?.email ? String(payload.email) : null;
@@ -216,7 +221,6 @@ function parseScenarioBody(body) {
     throw err;
   }
 
-  // Production/Supabase cannot serve disk paths from earlier local uploads.
   if (isSupabaseConfigured() && candidates.some((u) => isLocalUploadPath(u))) {
     const err = new Error(
       "Local /uploads/ image paths do not work in production. Use Upload image so the file is stored in Supabase Storage."
@@ -226,15 +230,42 @@ function parseScenarioBody(body) {
   }
 
   const image_urls = sanitizeImageUrls(candidates, { allowLocalUploads });
+  const translations = sanitizeTranslations(body?.translations);
+  const primaryLanguage =
+    typeof body?.primary_language === "string" &&
+    SUPPORTED_SCENARIO_LOCALES.includes(body.primary_language)
+      ? body.primary_language
+      : null;
+
+  const translationOrder = [primaryLanguage, "en", "de", "sq"].filter(
+    (l, i, arr) => l && arr.indexOf(l) === i
+  );
+  let derivedTitle = typeof body?.title === "string" ? body.title : "";
+  let derivedScenario = typeof body?.scenario === "string" ? body.scenario : "";
+  let derivedSolution = typeof body?.solution === "string" ? body.solution : "";
+  let derivedTags = tags;
+  if (!derivedTitle.trim() || !derivedScenario.trim() || !derivedSolution.trim()) {
+    for (const lng of translationOrder) {
+      const slot = translations[lng];
+      if (!slot) continue;
+      if (!derivedTitle.trim() && slot.title) derivedTitle = slot.title;
+      if (!derivedScenario.trim() && slot.scenario) derivedScenario = slot.scenario;
+      if (!derivedSolution.trim() && slot.solution) derivedSolution = slot.solution;
+      if (derivedTags.length === 0 && slot.tags?.length) derivedTags = slot.tags;
+      if (derivedTitle.trim() && derivedScenario.trim() && derivedSolution.trim()) break;
+    }
+  }
 
   const row = {
     category: body?.category,
-    title: body?.title,
-    scenario: body?.scenario,
-    solution: body?.solution,
-    tags,
+    title: derivedTitle,
+    scenario: derivedScenario,
+    solution: derivedSolution,
+    tags: derivedTags,
     image_urls,
     image_url: image_urls[0] || "",
+    translations,
+    primary_language: primaryLanguage,
     confluence_page_id: sanitizeConfluencePageId(body?.confluence_page_id),
     confluence_page_url: sanitizeConfluenceUrl(body?.confluence_page_url),
     confluence_page_title:
@@ -247,11 +278,12 @@ function parseScenarioBody(body) {
     {
       id: 1,
       ...row,
-      tags,
+      tags: derivedTags,
     },
     { allowLocalUploads }
   );
   if (!normalized) return null;
+  normalized.primary_language = primaryLanguage;
   return normalized;
 }
 
@@ -266,12 +298,7 @@ function parseCategoryBody(body) {
   return { label, sort_order, slug };
 }
 
-/* ---------- Login rate limiting ----------
- *
- * Bug fix: the previous implementation incremented on every attempt (including
- * successes), never bounded the map, and never expired entries — a memory leak.
- * Now: fixed sliding window, capped Map size, and only failures count.
- */
+/* ---------- Login rate limiting ---------- */
 
 const loginAttempts = new Map();
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -291,7 +318,6 @@ function evictOldAttempts(now) {
     if (now - entry.windowStart > LOGIN_WINDOW_MS) loginAttempts.delete(ip);
   }
   if (loginAttempts.size > LOGIN_ATTEMPTS_MAX_ENTRIES) {
-    // Drop the oldest 20% of entries.
     const drop = Math.floor(loginAttempts.size * 0.2);
     let i = 0;
     for (const ip of loginAttempts.keys()) {
@@ -331,18 +357,12 @@ const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 
-/* ---------- Security headers ----------
- *
- * Bug fix: previously these were registered *after* the upload route, so
- * uploads didn't get the headers. Now applied to every response.
- */
+/* ---------- Security headers ---------- */
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  // No third-party font/script CDNs. Confluence-embedded images may still come
-  // from any HTTPS host (that's what employees see in the rendered page).
   const csp = [
     "default-src 'self'",
     "img-src 'self' data: blob: https:",
@@ -368,9 +388,6 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
 });
 
-// Magic-byte check — the multer-reported mimetype comes from the client and
-// cannot be trusted. Reject anything whose first bytes don't match a real
-// JPEG/PNG/WebP/GIF header.
 function detectImageMime(buf) {
   if (!buf || buf.length < 12) return null;
   if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
@@ -408,7 +425,6 @@ app.post("/api/uploads/image", requireAuth, (req, res) => {
         error: "File is not a valid JPEG, PNG, WebP, or GIF image.",
       });
     }
-    // Trust the detected mimetype over the client-supplied one.
     req.file.mimetype = detected;
     try {
       const url = await saveUploadedImage(req.file);
@@ -442,28 +458,17 @@ app.get("/api/health", async (_req, res) => {
   });
 });
 
-app.get("/api/config", async (_req, res) => {
-  let bootstrapAvailable = true;
-  try {
-    if (isSupabaseConfigured()) {
-      const tableReady = await isAdminsTableReady();
-      bootstrapAvailable = tableReady ? await isAllowlistEmpty() : true;
-    }
-  } catch (e) {
-    console.error("[config] allowlist probe:", e?.message || e);
-  }
+app.get("/api/config", (_req, res) => {
   res.json({
     authConfigured: authConfigured(),
     requireUsername: adminUser.length > 0,
+    envLoginAvailable: envLoginAvailable(),
     storage: storageMode(),
     supabaseRequired: isProd && !isSupabaseConfigured(),
     confluenceCloudConfigured: cloudConfigured(),
-    // Client uses these to render the right sign-in UI.
-    supabaseAuthAvailable: isSupabaseConfigured(),
+    supabaseAuthAvailable: isSupabaseConfigured() && !!(process.env.SUPABASE_ANON_KEY || "").trim(),
     supabaseUrl: isSupabaseConfigured() ? process.env.SUPABASE_URL : null,
-    // Anon key is safe to expose (meant for client use).
     supabaseAnonKey: (process.env.SUPABASE_ANON_KEY || "").trim() || null,
-    bootstrapAvailable,
   });
 });
 
@@ -660,19 +665,40 @@ app.delete("/api/scenarios/:id", requireAuth, async (req, res) => {
   }
 });
 
-/* ---------- Auth ----------
- *
- * Primary flow: user signs in via Supabase Auth in the browser (email/password,
- * magic link, or Google OAuth), then POSTs the resulting access token to
- * /api/auth/session. The server verifies the token with Supabase, checks the
- * email is in the app_admins allowlist, and issues the qm_admin httpOnly cookie.
- *
- * Bootstrap flow: /api/auth/login accepts ADMIN_USER + ADMIN_PASSWORD from env,
- * but ONLY while the allowlist is empty (or Supabase isn't configured yet).
- * Once you invite a real admin, the env-var login stops working.
- */
+/* ---------- Auth ---------- */
 
-/** Exchange a Supabase access token for our httpOnly session cookie. */
+app.post("/api/auth/login", (req, res) => {
+  if (!envLoginAvailable()) {
+    return res.status(503).json({
+      error: "Env login is not configured. Set ADMIN_PASSWORD (and JWT_SECRET).",
+    });
+  }
+  const ip = clientIp(req);
+  if (loginBlocked(ip)) {
+    return res.status(429).json({ error: "Too many failed attempts. Try again later." });
+  }
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+
+  let ok = safeStringEquals(password, adminPassword);
+  if (adminUser) {
+    ok = ok && safeStringEquals(username, adminUser);
+  }
+  if (!ok) {
+    recordLoginFailure(ip);
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+
+  clearLoginFailures(ip);
+  const jwtToken = jwt.sign(
+    { role: "admin", auth: "env", sub: "env-admin", username: adminUser || null },
+    jwtSecret,
+    { expiresIn: "8h" }
+  );
+  setAdminCookie(res, jwtToken);
+  res.json({ ok: true, auth: "env" });
+});
+
 app.post("/api/auth/session", async (req, res) => {
   if (requireSupabaseInProd(res)) return;
   const ip = clientIp(req);
@@ -690,8 +716,13 @@ app.post("/api/auth/session", async (req, res) => {
       recordLoginFailure(ip);
       return res.status(401).json({ error: "Invalid or expired session" });
     }
-    const ok = await isAllowedAdmin(user.email);
-    if (!ok) {
+    let allowed = await isAllowedAdmin(user.email);
+    let bootstrapped = false;
+    if (!allowed) {
+      bootstrapped = await tryAutoBootstrap(user.email);
+      if (bootstrapped) allowed = true;
+    }
+    if (!allowed) {
       recordLoginFailure(ip);
       return res.status(403).json({
         error:
@@ -705,52 +736,11 @@ app.post("/api/auth/session", async (req, res) => {
       { expiresIn: "8h" }
     );
     setAdminCookie(res, jwtToken);
-    res.json({ ok: true, email: user.email });
+    res.json({ ok: true, email: user.email, bootstrapped });
   } catch (e) {
     console.error("[auth:session]", e?.message || e);
     res.status(500).json({ error: "Session exchange failed" });
   }
-});
-
-/** Bootstrap login (env vars). Disabled once the allowlist has an admin. */
-app.post("/api/auth/login", async (req, res) => {
-  if (!authConfigured()) {
-    return res.status(503).json({ error: "Login disabled" });
-  }
-  const ip = clientIp(req);
-  if (loginBlocked(ip)) {
-    return res.status(429).json({ error: "Too many failed attempts. Try again later." });
-  }
-  // If Supabase is configured, only permit env-var login while nobody has
-  // been invited yet — this closes off the env-var backdoor as soon as
-  // there's a real admin.
-  if (isSupabaseConfigured()) {
-    try {
-      const tableReady = await isAdminsTableReady();
-      const empty = tableReady ? await isAllowlistEmpty() : true;
-      if (!empty) {
-        return res.status(403).json({
-          error: "Bootstrap login disabled: use email sign-in via Supabase Auth.",
-        });
-      }
-    } catch (e) {
-      console.error("[auth:login] allowlist probe:", e?.message || e);
-    }
-  }
-  const bodyUser = typeof req.body?.username === "string" ? req.body.username.trim() : "";
-  const bodyPass = typeof req.body?.password === "string" ? req.body.password : "";
-  const userOk = adminUser.length === 0 ? true : safeStringEquals(bodyUser, adminUser);
-  const passOk = safeStringEquals(bodyPass, adminPassword);
-  if (!userOk || !passOk) {
-    recordLoginFailure(ip);
-    return res.status(401).json({ error: "Invalid username or password" });
-  }
-  clearLoginFailures(ip);
-  const token = jwt.sign({ role: "admin", email: "bootstrap" }, jwtSecret, {
-    expiresIn: "8h",
-  });
-  setAdminCookie(res, token);
-  res.json({ ok: true, bootstrap: true });
 });
 
 app.post("/api/auth/logout", (_req, res) => {
@@ -764,7 +754,6 @@ app.get("/api/auth/me", (req, res) => {
   res.json({
     admin: true,
     email: payload.email || null,
-    bootstrap: payload.email === "bootstrap",
   });
 });
 
@@ -788,9 +777,19 @@ app.post("/api/admin/admins", requireAuth, async (req, res) => {
       return res.status(503).json({ error: "Supabase is required to invite admins" });
     }
     const email = typeof req.body?.email === "string" ? req.body.email : "";
+    const origin =
+      typeof req.body?.origin === "string" && req.body.origin.trim()
+        ? req.body.origin.trim().replace(/\/+$/, "")
+        : `${req.protocol}://${req.get("host")}`.replace(/\/+$/, "");
+    const lng =
+      typeof req.body?.language === "string" && /^[a-z]{2}$/i.test(req.body.language)
+        ? req.body.language.toLowerCase()
+        : "en";
+    const redirectTo = `${origin}/${lng}/admin/reset`;
     const admin = await inviteAdmin({
       email,
       invitedBy: currentAdminEmail(req),
+      redirectTo,
     });
     res.status(201).json({ admin });
   } catch (e) {
@@ -816,11 +815,7 @@ app.delete("/api/admin/admins/:email", requireAuth, async (req, res) => {
   }
 });
 
-/* ---------- Admin: data export (GDPR Art 20 portability) ----------
- *
- * Returns a JSON dump of everything the admin can see. Secrets — password,
- * JWT, Supabase key, Confluence access/refresh tokens — are never included.
- */
+/* ---------- Admin: data export ---------- */
 app.get("/api/admin/export", requireAuth, async (_req, res) => {
   if (requireSupabaseInProd(res)) return;
   try {
@@ -831,7 +826,6 @@ app.get("/api/admin/export", requireAuth, async (_req, res) => {
     let confluence = { connected: false };
     try {
       const status = await getConnectionStatus();
-      // Deliberately exclude tokens; keep only non-secret metadata.
       confluence = {
         connected: !!status?.connected,
         flavor: status?.flavor || null,
@@ -871,7 +865,6 @@ function confluenceError(res, e) {
   res.status(status).json({ error: message });
 }
 
-// Public: minimal status so the UI can show/hide the Confluence panel.
 app.get("/api/confluence/status", async (_req, res) => {
   if (requireSupabaseInProd(res)) return;
   try {
@@ -886,8 +879,6 @@ app.get("/api/confluence/status", async (_req, res) => {
   }
 });
 
-// Admin: begin Cloud OAuth. Returns the URL rather than 302 so it works from
-// SPA fetch calls; the client then does window.location.assign(url).
 app.get("/api/confluence/connect/cloud", requireAuth, async (_req, res) => {
   if (requireSupabaseInProd(res)) return;
   try {
@@ -904,9 +895,6 @@ app.get("/api/confluence/connect/cloud", requireAuth, async (_req, res) => {
   }
 });
 
-// Atlassian redirects here. This endpoint is public (Atlassian isn't
-// authenticated to us), but only completes if the state token — issued by
-// the admin flow above — matches.
 app.get("/api/confluence/callback/cloud", async (req, res) => {
   if (requireSupabaseInProd(res)) return;
   const { code, state, error, error_description } = req.query || {};
@@ -951,7 +939,6 @@ a{color:#4fa3ff}</style></head><body>
 </div></body></html>`;
 }
 
-// Admin: paste PAT for Data Center.
 app.post("/api/confluence/connect/dc", requireAuth, async (req, res) => {
   if (requireSupabaseInProd(res)) return;
   try {
@@ -975,7 +962,6 @@ app.delete("/api/confluence/disconnect", requireAuth, async (_req, res) => {
   }
 });
 
-// Admin: search pages (browsing for something to link).
 app.get("/api/confluence/search", requireAuth, async (req, res) => {
   if (requireSupabaseInProd(res)) return;
   try {
@@ -987,7 +973,6 @@ app.get("/api/confluence/search", requireAuth, async (req, res) => {
   }
 });
 
-// Public *if* the page is linked from a published scenario; otherwise admin-only.
 app.get("/api/confluence/page/:id", async (req, res) => {
   if (requireSupabaseInProd(res)) return;
   const pageId = String(req.params.id || "").trim();
@@ -1001,7 +986,6 @@ app.get("/api/confluence/page/:id", async (req, res) => {
       if (!allowed) return res.status(404).json({ error: "Not found" });
     }
     const page = await fetchPageById(pageId);
-    // Cache briefly so a page linked by many employees isn't re-fetched.
     res.setHeader("Cache-Control", "private, max-age=60");
     res.json({ page });
   } catch (e) {
@@ -1063,14 +1047,7 @@ if (distBundleOk) {
   });
 }
 
-/* ---------- Global error handler ----------
- *
- * MUST come last and take 4 args to be treated as an error middleware.
- * Catches body-parser SyntaxError (bad JSON), payload-too-large, forbidden
- * static file access, and anything else that bubbled up — so responses stay
- * JSON for /api and plain text elsewhere, never leaking Express stack traces
- * or absolute file paths.
- */
+/* ---------- Global error handler ---------- */
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
   const status = Number.isFinite(err?.status) ? err.status : 500;
@@ -1106,7 +1083,7 @@ app.use((err, req, res, _next) => {
 
 const port = Number(process.env.PORT) || 3001;
 if (isProd && (!adminPassword || !jwtSecret)) {
-  console.warn("[qm-playbook] ADMIN_PASSWORD and JWT_SECRET required");
+  console.warn("[qm-playbook] ADMIN_PASSWORD and JWT_SECRET required for env login in production");
 }
 if (isProd && adminPassword && (adminPassword.length < 12 || adminPassword === "admin123")) {
   console.warn("[qm-playbook] ADMIN_PASSWORD looks weak; use a long unique password");
@@ -1114,8 +1091,11 @@ if (isProd && adminPassword && (adminPassword.length < 12 || adminPassword === "
 if (isProd && jwtSecret && (jwtSecret.length < 32 || jwtSecret === "dev-jwt-secret" || jwtSecret === "dev-only-change-before-production")) {
   console.warn("[qm-playbook] JWT_SECRET looks weak; use a long random secret (32+ chars)");
 }
-if (isProd && !adminUser) {
+if (isProd && adminPassword && !adminUser) {
   console.warn("[qm-playbook] ADMIN_USER is unset; set it to require a username at login");
+}
+if (isProd && !(process.env.SUPABASE_ANON_KEY || "").trim()) {
+  console.warn("[qm-playbook] SUPABASE_ANON_KEY not set; browser Supabase Auth disabled");
 }
 if (isProd && !isSupabaseConfigured()) {
   console.error("[qm-playbook] SUPABASE_URL and SUPABASE_SECRET_KEY are required in production");

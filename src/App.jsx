@@ -20,6 +20,7 @@ import AdminLogin from "./AdminLogin.jsx";
 import AdminReset from "./AdminReset.jsx";
 import AdminView from "./AdminView.jsx";
 import PrivacyView from "./PrivacyView.jsx";
+import CookieNotice from "./CookieNotice.jsx";
 import { styles } from "./styles.js";
 
 function LocaleLayout() {
@@ -43,6 +44,7 @@ function LocaleLayout() {
     <AppDataProvider>
       <div style={styles.root}>
         <Outlet />
+        <CookieNotice />
       </div>
     </AppDataProvider>
   );

@@ -11,9 +11,8 @@ Follow these steps in order. The browser never talks to Supabase directly — on
 4a. For Confluence support, run [`supabase/migrations/003_confluence.sql`](supabase/migrations/003_confluence.sql)
 4b. For per-user Supabase Auth admin sign-in, run [`supabase/migrations/004_admins.sql`](supabase/migrations/004_admins.sql), then in the Supabase dashboard:
    * **Authentication → Providers → Email**: leave enabled (default).
-   * **Authentication → Providers → Google**: click Enable, follow the wizard (create OAuth 2.0 client in Google Cloud, paste client id/secret). Add `https://<your-service>.onrender.com/*` and `http://localhost:5173/*` under **Authentication → URL Configuration → Redirect URLs**.
+   * **Authentication → URL Configuration**: set **Site URL** to `https://<your-service>.onrender.com` and add both that URL and `http://localhost:5173/*` under **Redirect URLs**.
    * **Authentication → Email Templates**: optionally rebrand the sign-up / reset templates.
-   * **Site URL** (Auth → URL Configuration): set to `https://<your-service>.onrender.com`.
 4b. For multiple images per scenario, run [`supabase/migrations/004_scenario_images.sql`](supabase/migrations/004_scenario_images.sql)
 5. Confirm tables exist under **Table Editor**: `categories`, `scenarios` (both empty is correct)
 6. **Storage** (for admin image uploads): create a **public** bucket named `scenario-images` (see [`supabase/STORAGE.md`](supabase/STORAGE.md)). The server also tries to create this bucket on first upload when `SUPABASE_SECRET_KEY` is set.
@@ -65,12 +64,12 @@ Expect `storage: supabase` from health, and `connected`-style JSON from the chec
 | Variable | Required | Notes |
 |----------|----------|--------|
 | `NODE_ENV` | yes | Already `production` in render.yaml |
-| `ADMIN_PASSWORD` | yes | Strong unique password |
+| `ADMIN_PASSWORD` | yes (for env login) | Strong unique password — enables username/password Admin Portal login |
 | `JWT_SECRET` | yes | Long random string (32+ chars) — signs the httpOnly admin session cookie |
 | `SUPABASE_URL` | yes | From Supabase |
 | `SUPABASE_SECRET_KEY` | yes | New secret key (`sb_secret_...`), not legacy service_role |
-| `SUPABASE_ANON_KEY` | yes | Anon / publishable key from Supabase → API. Sent to the browser for Supabase Auth sign-in. Safe to expose. |
-| `ADMIN_USER` | recommended | Extra login gate (username) |
+| `SUPABASE_ANON_KEY` | optional | Needed only for Supabase Auth (email/magic link) in the browser. Env login works without it. |
+| `ADMIN_USER` | recommended | Extra login gate (username) for env login |
 | `VITE_API_BASE` | no | Leave unset / empty (same-origin so the session cookie works) |
 | `CONFLUENCE_CLIENT_ID` | no | Only for Confluence Cloud OAuth (3LO) |
 | `CONFLUENCE_CLIENT_SECRET` | no | Only for Confluence Cloud OAuth |
@@ -92,7 +91,7 @@ Expect `storage: supabase` from health, and `connected`-style JSON from the chec
 
 1. Open `https://YOUR-SERVICE.onrender.com`
 2. Hit `/api/health` — expect `"storage":"supabase","ok":true`. For multi-image, also expect `"imageUrlsReady":true` (run [`004_scenario_images.sql`](supabase/migrations/004_scenario_images.sql) if false).
-3. Sign in at **Admin Portal** (use `ADMIN_USER` + `ADMIN_PASSWORD` if username is set)
+3. Sign in at **Admin Portal** with `ADMIN_USER` + `ADMIN_PASSWORD` (env login). Supabase Auth (email/magic link) is optional if `SUPABASE_ANON_KEY` is set.
 4. **Manage Categories** → create categories
 5. **Add Scenario** → publish so employees can see it
 6. Open **Employee Access** and confirm the scenario appears

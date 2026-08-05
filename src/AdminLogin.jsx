@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { apiFetch } from "./api.js";
 import { useAppData } from "./AppData.jsx";
 import LanguageSwitcher from "./LanguageSwitcher.jsx";
+import { loginWithEnvCredentials } from "./api.js";
 import {
   exchangeForAppSession,
   getSupabaseAuth,
@@ -13,17 +13,6 @@ import {
 import { localePath } from "./utils.js";
 import { styles } from "./styles.js";
 
-/**
- * Sign-in surface. Renders one of three flows:
- *   - Supabase Auth (email + password, magic link, Google OAuth, register,
- *     forgot password) when the server reports supabaseAuthAvailable.
- *   - Bootstrap login (ADMIN_USER + ADMIN_PASSWORD) when Supabase is not
- *     configured OR the admin allowlist is empty (fresh install).
- *   - "Login disabled" copy if neither is available.
- *
- * After Supabase returns a session — inline or via magic-link/OAuth redirect
- * — we exchange the access_token for the app's httpOnly qm_admin cookie.
- */
 export default function AdminLogin() {
   const { t } = useTranslation();
   const { lng } = useParams();
@@ -36,6 +25,7 @@ export default function AdminLogin() {
   } = useAppData();
 
   const [tab, setTab] = useState("password"); // password | magic | register
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -43,18 +33,12 @@ export default function AdminLogin() {
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Bootstrap-only fields
-  const [bootstrapUser, setBootstrapUser] = useState("");
-  const [bootstrapPass, setBootstrapPass] = useState("");
-
+  const envAvailable = !!serverConfig.envLoginAvailable;
+  const requireUsername = !!serverConfig.requireUsername;
   const supabaseAvailable = !!serverConfig.supabaseAuthAvailable;
-  const bootstrapAvailable = !!serverConfig.bootstrapAvailable;
-  const showSupabase = supabaseAvailable;
-  const showBootstrap = !supabaseAvailable || bootstrapAvailable;
+  const anyLogin = envAvailable || supabaseAvailable;
 
   useEffect(() => {
-    // If Supabase redirected back with a session (magic link / OAuth), pick
-    // it up and exchange it for our cookie.
     let cancelled = false;
     (async () => {
       if (!supabaseAvailable) return;
@@ -83,6 +67,31 @@ export default function AdminLogin() {
     setInfo("");
   };
 
+  const finishLogin = async () => {
+    setAdminSession(true);
+    setPassword("");
+    await Promise.all([loadScenariosFromServer(), loadCategoriesFromServer()]);
+    navigate(localePath(lng, "admin"), { replace: true });
+  };
+
+  const submitEnvLogin = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    clearMsgs();
+    setBusy(true);
+    try {
+      await loginWithEnvCredentials({
+        username: requireUsername ? username : "",
+        password,
+      });
+      await finishLogin();
+    } catch (err) {
+      setError(err?.message || t("login.failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submitPassword = async (e) => {
     e.preventDefault();
     if (busy) return;
@@ -99,10 +108,7 @@ export default function AdminLogin() {
       const token = data?.session?.access_token;
       if (!token) throw new Error(t("login.noSession"));
       await exchangeForAppSession(token);
-      setAdminSession(true);
-      setPassword("");
-      await Promise.all([loadScenariosFromServer(), loadCategoriesFromServer()]);
-      navigate(localePath(lng, "admin"), { replace: true });
+      await finishLogin();
     } catch (err) {
       setError(err?.message || t("login.failed"));
     } finally {
@@ -153,24 +159,6 @@ export default function AdminLogin() {
     }
   };
 
-  const signInGoogle = async () => {
-    if (busy) return;
-    clearMsgs();
-    setBusy(true);
-    try {
-      const client = await getSupabaseAuth();
-      if (!client) throw new Error(t("login.supabaseUnavailable"));
-      const { error: authError } = await client.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: oauthRedirectUrl(lng) },
-      });
-      if (authError) throw new Error(authError.message);
-    } catch (err) {
-      setError(err?.message || t("login.failed"));
-      setBusy(false);
-    }
-  };
-
   const forgotPassword = async () => {
     if (busy || !email.trim()) {
       setError(t("login.needEmail"));
@@ -193,33 +181,6 @@ export default function AdminLogin() {
     }
   };
 
-  const submitBootstrap = async (e) => {
-    e.preventDefault();
-    if (busy) return;
-    clearMsgs();
-    setBusy(true);
-    try {
-      const res = await apiFetch("/api/auth/login", {
-        method: "POST",
-        body: JSON.stringify({
-          username: bootstrapUser,
-          password: bootstrapPass,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || t("login.failed"));
-      setAdminSession(true);
-      setBootstrapUser("");
-      setBootstrapPass("");
-      await Promise.all([loadScenariosFromServer(), loadCategoriesFromServer()]);
-      navigate(localePath(lng, "admin"), { replace: true });
-    } catch (err) {
-      setError(err?.message || t("login.failed"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (!serverConfig.loaded) {
     return (
       <div style={styles.loginWrap}>
@@ -231,7 +192,7 @@ export default function AdminLogin() {
     );
   }
 
-  if (!showSupabase && !showBootstrap) {
+  if (!anyLogin) {
     return (
       <div style={styles.loginWrap}>
         <main style={styles.loginBox}>
@@ -259,53 +220,100 @@ export default function AdminLogin() {
         <div style={styles.loginIcon}>⚙</div>
         <h2 style={styles.loginTitle}>{t("login.title")}</h2>
 
-        {bootstrapAvailable && showSupabase ? (
-          <div
-            style={{
-              ...styles.confluenceStatusBox,
-              borderColor: "#e67e22",
-              width: "100%",
-              boxSizing: "border-box",
-            }}
-          >
-            <strong style={{ color: "#e67e22" }}>{t("login.bootstrapWarn")}</strong>
-          </div>
+        {envAvailable ? (
+          <>
+            <p style={styles.loginSub}>
+              {requireUsername ? t("login.userAndPass") : t("login.passwordOnly")}
+            </p>
+            {supabaseAvailable ? (
+              <p style={{ ...styles.loginSub, marginTop: 0, fontSize: "0.85rem" }}>
+                {t("login.bootstrapTitle")}
+              </p>
+            ) : null}
+            <form onSubmit={submitEnvLogin} style={loginForm}>
+              {requireUsername ? (
+                <input
+                  type="text"
+                  style={styles.loginInput}
+                  placeholder={t("login.username")}
+                  value={username}
+                  disabled={busy}
+                  autoComplete="username"
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+              ) : null}
+              <div style={{ position: "relative", width: "100%" }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  style={{ ...styles.loginInput, width: "100%", boxSizing: "border-box", paddingRight: "4.5rem" }}
+                  placeholder={t("login.password")}
+                  value={password}
+                  disabled={busy}
+                  autoComplete="current-password"
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  disabled={busy}
+                  aria-pressed={showPassword}
+                  style={showPasswordBtn}
+                >
+                  {showPassword ? t("login.hidePassword") : t("login.showPassword")}
+                </button>
+              </div>
+              {error && !supabaseAvailable ? (
+                <div style={styles.loginError} role="alert">
+                  {error}
+                </div>
+              ) : null}
+              {info && !supabaseAvailable ? <div style={loginInfo}>{info}</div> : null}
+              <button type="submit" style={styles.primaryBtn} disabled={busy}>
+                {busy ? t("login.signingIn") : t("login.signIn")}
+              </button>
+            </form>
+          </>
         ) : null}
 
-        {showSupabase ? (
+        {supabaseAvailable ? (
           <>
+            {envAvailable ? (
+              <p style={{ ...styles.loginSub, marginTop: "1.25rem", marginBottom: 0 }}>
+                {t("login.orSupabase")}
+              </p>
+            ) : null}
             <div style={{ ...styles.tabRow, width: "100%", marginTop: "0.5rem" }}>
               <button
                 type="button"
                 style={{ ...styles.tabBtn, ...(tab === "password" ? styles.tabBtnActive : {}) }}
-                onClick={() => { setTab("password"); clearMsgs(); }}
+                onClick={() => {
+                  setTab("password");
+                  clearMsgs();
+                }}
               >
                 {t("login.tabPassword")}
               </button>
               <button
                 type="button"
                 style={{ ...styles.tabBtn, ...(tab === "magic" ? styles.tabBtnActive : {}) }}
-                onClick={() => { setTab("magic"); clearMsgs(); }}
+                onClick={() => {
+                  setTab("magic");
+                  clearMsgs();
+                }}
               >
                 {t("login.tabMagic")}
               </button>
               <button
                 type="button"
                 style={{ ...styles.tabBtn, ...(tab === "register" ? styles.tabBtnActive : {}) }}
-                onClick={() => { setTab("register"); clearMsgs(); }}
+                onClick={() => {
+                  setTab("register");
+                  clearMsgs();
+                }}
               >
                 {t("login.tabRegister")}
               </button>
             </div>
-
-            <button
-              type="button"
-              style={{ ...styles.ghostBtn, width: "100%", justifyContent: "center", marginBottom: "0.75rem" }}
-              onClick={signInGoogle}
-              disabled={busy}
-            >
-              {t("login.google")}
-            </button>
 
             {tab === "password" ? (
               <form onSubmit={submitPassword} style={loginForm}>
@@ -400,37 +408,10 @@ export default function AdminLogin() {
           </>
         ) : null}
 
-        {showBootstrap ? (
-          <>
-            {showSupabase ? <hr style={{ width: "100%", borderColor: "#1a2a3a", margin: "1rem 0" }} /> : null}
-            <h3 style={{ color: "#e67e22", fontSize: "0.9rem", margin: "0.25rem 0" }}>
-              {t("login.bootstrapTitle")}
-            </h3>
-            <form onSubmit={submitBootstrap} style={loginForm}>
-              <input
-                type="text"
-                style={styles.loginInput}
-                placeholder={t("login.username")}
-                value={bootstrapUser}
-                disabled={busy}
-                autoComplete="username"
-                onChange={(e) => setBootstrapUser(e.target.value)}
-              />
-              <input
-                type="password"
-                style={styles.loginInput}
-                placeholder={t("login.password")}
-                value={bootstrapPass}
-                disabled={busy}
-                autoComplete="current-password"
-                onChange={(e) => setBootstrapPass(e.target.value)}
-              />
-              {error && !showSupabase ? <div style={styles.loginError} role="alert">{error}</div> : null}
-              <button type="submit" style={styles.primaryBtn} disabled={busy}>
-                {busy ? t("login.signingIn") : t("login.signIn")}
-              </button>
-            </form>
-          </>
+        {envAvailable && error && supabaseAvailable ? (
+          <div style={{ ...styles.loginError, marginTop: "0.75rem" }} role="alert">
+            {error}
+          </div>
         ) : null}
 
         <button

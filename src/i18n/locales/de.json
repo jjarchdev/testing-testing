@@ -18,62 +18,62 @@
     "back": "← Zurück",
     "title": "Datenschutzhinweis",
     "updated": "Zuletzt aktualisiert: {{date}}",
-    "controllerHeading": "Verantwortliche Stelle",
-    "controllerBody": "{{org}} ist die verantwortliche Stelle für diese Anwendung. Kontakt: {{email}}.",
-    "whatWeProcessHeading": "Verarbeitete Daten",
-    "whatWeProcessLead": "Diese Anwendung verarbeitet die folgenden Kategorien personenbezogener Daten:",
+    "controllerHeading": "Wer das betreibt",
+    "controllerBody": "{{org}} betreibt dieses Playbook und ist für die Daten darin verantwortlich. Bei Fragen einfach an {{email}} schreiben — es antwortet ein Mensch.",
+    "whatWeProcessHeading": "Was wir tatsächlich speichern",
+    "whatWeProcessLead": "Wir versuchen, so wenig wie möglich zu speichern. Die vollständige Liste:",
     "wp": {
-      "admin": "Admin-Zugangsdaten (Benutzername / Passwort) über Server-Umgebungsvariablen.",
-      "session": "Ein kurzlebiges Session-Cookie (qm_admin), das nur eine Admin-Rollenmarkierung enthält — keine personenbezogenen Kennungen.",
-      "ip": "IP-Adressen fehlgeschlagener Anmeldeversuche, bis zu 15 Minuten im Speicher zur Ratenbegrenzung.",
-      "confluence": "Für Admins, die Confluence verbinden: E-Mail oder Anzeigename des Kontos, Confluence-Metadaten und Access-/Refresh-Tokens (verschlüsselt gespeichert).",
-      "content": "Was Admins in Szenarien, Kategorien, Tags und Bildern schreiben. Admins sollten personenbezogene Daten identifizierbarer Personen nur bei rechtlicher Grundlage aufnehmen."
+      "admin": "Admin-E-Mail-Adressen — zum Einloggen und um nachzuvollziehen, wer wen eingeladen hat. Passwörter gehen direkt an Supabase Auth und werden dort gehasht; wir sehen sie nie im Klartext.",
+      "session": "Ein kurzes Session-Cookie (qm_admin), das merkt, dass du eingeloggt bist. Enthält nur den Admin-Marker und deine E-Mail — sonst nichts.",
+      "ip": "Bei einer fehlgeschlagenen Anmeldung merken wir uns die IP-Adresse 15 Minuten im Arbeitsspeicher, um Brute-Force zu bremsen. Das war's.",
+      "confluence": "Wenn du ein Confluence-Konto verbindest, speichern wir den Sitenamen, deine Atlassian-E-Mail und den Access-Token. Der Token wird vor dem Speichern verschlüsselt.",
+      "content": "Alles, was Admins in Szenarien, Kategorien und Tags schreiben und alle Bilder, die sie hochladen. Wenn es um eine Person geht, bitte einen guten Grund haben."
     },
-    "noEmployeeTracking": "Mitarbeiter, die Szenarien lesen, müssen sich nicht anmelden. Es gibt keine Analytik, Tracking-Cookies oder Drittanbieter-Tracker.",
-    "purposeHeading": "Zwecke",
+    "noEmployeeTracking": "Mitarbeiter, die das Playbook nur lesen, melden sich nicht an und werden nicht getrackt. Keine Analytik, keine Werbung, keine Drittanbieter-Skripte.",
+    "purposeHeading": "Wozu wir was speichern",
     "purpose": {
-      "admin": "Verwaltung von Verfahrensinhalten (Szenarien anlegen/bearbeiten/veröffentlichen).",
-      "security": "Ratenbegrenzung von Anmeldeversuchen und Schutz vor Brute-Force.",
-      "confluence": "Confluence-Seiten abrufen und anzeigen, die Admins mit einem Szenario verknüpfen."
+      "admin": "Damit Admins sich einloggen und das Playbook pflegen können.",
+      "security": "Damit niemand die Anmeldeseite dauerbelastet.",
+      "confluence": "Damit die verknüpfte Confluence-Seite im Szenario für dein Team sichtbar ist."
     },
-    "legalBasisHeading": "Rechtsgrundlage (DSGVO Art. 6)",
-    "legalBasisBody": "Berechtigtes Interesse zur Verwaltung von Verfahren und zur Absicherung des Zugangs; Einwilligung des Admins, der ein Confluence-Konto verbindet.",
-    "retentionHeading": "Aufbewahrung",
+    "legalBasisHeading": "Rechtsgrundlage",
+    "legalBasisBody": "Berechtigtes Interesse für den Betrieb des Playbooks und dessen Absicherung. Wenn du Confluence verbindest, geschieht das mit deiner Einwilligung — jederzeit im Admin-Bereich zu widerrufen.",
+    "retentionHeading": "Wie lange wir es aufbewahren",
     "retention": {
-      "session": "Session-Cookie: 8 Stunden oder bis zur Abmeldung.",
+      "session": "Session-Cookie: 8 Stunden oder bis zum Logout.",
       "ip": "Fehlversuchs-Zähler: 15 Minuten.",
-      "content": "Szenarien und Kategorien: bis der Admin sie löscht. Beim Löschen werden auch die hochgeladenen Bilder entfernt.",
-      "tokens": "Confluence-Tokens: bis der Admin die Verbindung trennt."
+      "content": "Szenarien, Kategorien und Bilder: bis ein Admin sie löscht. Beim Löschen eines Szenarios verschwinden auch die Bilder.",
+      "tokens": "Confluence-Tokens: bis ein Admin auf Trennen klickt."
     },
-    "subprocessorsHeading": "Auftragsverarbeiter",
+    "subprocessorsHeading": "Wer sonst die Daten sieht",
     "sub": {
-      "supabase": "Supabase — Datenbank und Objektspeicher. AVV unter supabase.com/legal/dpa.",
-      "render": "Render — Anwendungs-Hosting. AVV unter render.com/legal/dpa.",
-      "atlassian": "Atlassian — nur wenn Confluence verbunden ist. AVV unter atlassian.com/legal/data-processing-addendum."
+      "supabase": "Supabase — hostet Datenbank, Bildspeicher und Anmeldung. AVV: supabase.com/legal/dpa",
+      "render": "Render — hostet die Anwendung. AVV: render.com/legal/dpa",
+      "atlassian": "Atlassian — nur wenn Confluence verbunden ist. AVV: atlassian.com/legal/data-processing-addendum"
     },
-    "transfersBody": "Wenn Supabase- oder Render-Regionen außerhalb des EWR liegen, sind Übermittlungen durch EU-Standardvertragsklauseln in den jeweiligen AVV abgedeckt. Bevorzugen Sie EU-Regionen (Frankfurt / Irland).",
+    "transfersBody": "Wähle in Supabase und Render EU-Regionen (Frankfurt oder Irland), damit die Daten im EWR bleiben. Falls sie ihn verlassen, geschieht das unter den EU-Standardvertragsklauseln aus den obigen AVV.",
     "cookiesHeading": "Cookies",
-    "cookiesBody": "Nur ein technisch notwendiges Cookie: qm_admin, ein httpOnly-Session-Cookie nach der Admin-Anmeldung. Keine Analytik- oder Werbe-Cookies. Kein Consent-Banner nach ePrivacy erforderlich.",
-    "securityHeading": "Sicherheitsmaßnahmen (Art. 32)",
+    "cookiesBody": "Ein einziges Cookie: qm_admin. Wird erst nach dem Admin-Login gesetzt. Mitarbeiter bekommen nie ein Cookie. Keine Analytik- oder Werbe-Cookies. Weil das eine Cookie technisch notwendig ist, ist rechtlich kein Consent-Banner erforderlich — der kleine Hinweis unten ist nur zur Info.",
+    "securityHeading": "Wie wir es schützen",
     "sec": {
-      "https": "HTTPS in Produktion erzwungen (HSTS aktiviert).",
-      "encRest": "Verschlüsselung ruhender Daten in der Datenbank via Supabase.",
-      "encTokens": "Confluence-Tokens mit AES-256-GCM vor Speicherung verschlüsselt.",
-      "access": "Zugangskontrolle durch zeitkonstante Passwortprüfung und signiertes Session-Cookie."
+      "https": "In Produktion läuft alles über HTTPS mit HSTS.",
+      "encRest": "Supabase verschlüsselt Datenbank und Dateispeicher ruhend.",
+      "encTokens": "Confluence-Tokens werden mit AES-256-GCM verschlüsselt gespeichert.",
+      "access": "Nur Personen auf der Admin-Allowlist können sich einloggen. Login läuft über Supabase Auth, das Session-Cookie ist httpOnly und SameSite=Lax."
     },
-    "rightsHeading": "Ihre Rechte",
-    "rightsBody": "Nach DSGVO haben Sie die folgenden Rechte in Bezug auf Ihre personenbezogenen Daten:",
+    "rightsHeading": "Deine Rechte",
+    "rightsBody": "Nach DSGVO kannst du:",
     "rights": {
-      "access": "Auskunft — Kopie der gespeicherten Daten anfordern.",
-      "rectify": "Berichtigung — unzutreffende Daten korrigieren lassen.",
-      "erase": "Löschung — Daten löschen lassen (vorbehaltlich gesetzlicher Aufbewahrungspflichten).",
-      "portability": "Datenübertragbarkeit — Export in maschinenlesbarem JSON anfordern.",
-      "object": "Widerspruch oder Einschränkung der Verarbeitung auf Grundlage berechtigter Interessen.",
-      "complain": "Beschwerde bei Ihrer nationalen Datenschutzbehörde."
+      "access": "Auskunft über deine Daten anfordern.",
+      "rectify": "Um Korrektur falscher Daten bitten.",
+      "erase": "Um Löschung bitten (manchmal gibt es einen rechtlichen Grund, warum wir das noch nicht können — wir sagen dir dann warum).",
+      "portability": "Eine maschinenlesbare JSON-Datei mit deinen Daten anfordern — Admins können direkt im App exportieren.",
+      "object": "Einer bestimmten Nutzung deiner Daten widersprechen.",
+      "complain": "Dich bei deiner nationalen Datenschutzbehörde beschweren, falls wir etwas falsch machen."
     },
-    "contactBody": "Für die Ausübung dieser Rechte wenden Sie sich an {{email}}. Wir antworten innerhalb eines Monats.",
-    "breachHeading": "Verletzung des Schutzes personenbezogener Daten",
-    "breachBody": "Wenn wir eine Verletzung feststellen, die voraussichtlich zu Risiken für Ihre Rechte und Freiheiten führt, benachrichtigen wir die Aufsichtsbehörde innerhalb von 72 Stunden und informieren betroffene Personen unverzüglich."
+    "contactBody": "Für all das genügt eine E-Mail an {{email}}. Wir antworten spätestens in einem Monat, meist deutlich früher.",
+    "breachHeading": "Wenn etwas schiefgeht",
+    "breachBody": "Falls wir eine Datenpanne feststellen, die dir realistisch schaden könnte, informieren wir die Aufsichtsbehörde binnen 72 Stunden und die betroffenen Personen ohne unnötige Verzögerung."
   },
   "employee": {
     "navLabel": "Szenariofilter",
@@ -147,7 +147,17 @@
     "yesRevoke": "Ja, widerrufen",
     "cancel": "Abbrechen",
     "revokeConfirm": "Admin-Zugriff für {{email}} widerrufen?",
-    "you": "(du)"
+    "you": "(du)",
+    "inviteSent": "Einladungs-E-Mail an {{email}} gesendet. Der Empfänger legt über den Link ein Passwort fest.",
+    "inviteExisting": "{{email}} hat bereits ein Konto. Wir haben einen Anmelde-Link gesendet, damit klar ist, dass der Zugriff gewährt wurde.",
+    "inviteAdded": "{{email}} zur Allowlist hinzugefügt.",
+    "inviteEmailFailed": "{{email}} wurde zur Allowlist hinzugefügt, die E-Mail konnte aber nicht gesendet werden: {{reason}}. Bitten Sie die Person, sich selbst zu registrieren — das Konto funktioniert dann."
+  },
+  "cookie": {
+    "aria": "Cookie-Hinweis",
+    "body": "Wir setzen nur ein einziges Cookie — für den Admin-Login. Mitarbeiter bekommen kein Cookie. Kein Tracking, keine Werbung.",
+    "readMore": "Details",
+    "ok": "Verstanden"
   },
   "login": {
     "title": "Admin-Portal",
@@ -169,7 +179,6 @@
     "tabPassword": "Passwort",
     "tabMagic": "Magic Link",
     "tabRegister": "Registrieren",
-    "google": "Mit Google fortfahren",
     "sendMagic": "Magic Link senden",
     "sending": "Senden…",
     "magicSent": "Prüfe dein Postfach auf den Anmelde-Link.",
@@ -184,7 +193,7 @@
     "supabaseUnavailable": "Anmeldedienst nicht verfügbar. Kontaktiere einen Admin.",
     "noSession": "Supabase hat keine Sitzung zurückgegeben.",
     "bootstrapTitle": "Bootstrap-Anmeldung (Umgebungsvariablen)",
-    "bootstrapWarn": "Bootstrap-Anmeldung ist noch aktiv, da keine Admins eingeladen wurden. Melde dich unten an, lade dich selbst über Admins verwalten ein und entferne dann ADMIN_PASSWORD aus den Server-Umgebungsvariablen."
+    "orSupabase": "Oder mit Supabase Auth anmelden"
   },
   "admin": {
     "navLabel": "Admin-Navigation",
@@ -277,7 +286,11 @@
     "needCategory": "Zuerst eine Kategorie anlegen.",
     "fieldsRequired": "Titel, Szenario und Lösung sind erforderlich.",
     "unsavedConfirm": "Es gibt ungespeicherte Änderungen. Verwerfen?",
-    "confluencePage": "Confluence-Seite (optional)"
+    "confluencePage": "Confluence-Seite (optional)",
+    "needOneLanguage": "Bitte Titel, Szenario und Lösung für mindestens eine Sprache ausfüllen.",
+    "partialWarn": "Einige Sprachen sind unvollständig und werden Mitarbeitern nicht angezeigt ({{langs}}). Trotzdem speichern?",
+    "languagesLabel": "Inhaltssprachen",
+    "languagesHelp": "Eine, zwei oder alle drei ausfüllen. Mitarbeiter sehen die Version in ihrer UI-Sprache oder die erste verfügbare."
   },
   "confluence": {
     "back": "← Zurück zu Szenarien",

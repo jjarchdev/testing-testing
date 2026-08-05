@@ -19,14 +19,13 @@ export function AppDataProvider({ children }) {
     loaded: false,
     authConfigured: true,
     requireUsername: false,
+    envLoginAvailable: false,
     supabaseAuthAvailable: false,
     supabaseUrl: null,
     supabaseAnonKey: null,
-    bootstrapAvailable: true,
   });
   const [adminSession, setAdminSession] = useState(false);
   const [adminEmail, setAdminEmail] = useState(null);
-  const [adminIsBootstrap, setAdminIsBootstrap] = useState(false);
   const [notification, setNotification] = useState(null);
   const notifyTimerRef = useRef(null);
 
@@ -88,15 +87,14 @@ export function AppDataProvider({ children }) {
           loaded: true,
           authConfigured: data?.authConfigured !== false,
           requireUsername: !!data?.requireUsername,
+          envLoginAvailable: !!data?.envLoginAvailable,
           supabaseAuthAvailable: !!data?.supabaseAuthAvailable,
           supabaseUrl: data?.supabaseUrl || null,
           supabaseAnonKey: data?.supabaseAnonKey || null,
-          bootstrapAvailable: data?.bootstrapAvailable !== false,
         });
         const isAdmin = !!(sessionInfo && sessionInfo.admin);
         setAdminSession(isAdmin);
         setAdminEmail(sessionInfo?.email || null);
-        setAdminIsBootstrap(!!sessionInfo?.bootstrap);
       })
       .catch(() => {
         if (cancelled) return;
@@ -104,14 +102,13 @@ export function AppDataProvider({ children }) {
           loaded: true,
           authConfigured: false,
           requireUsername: false,
+          envLoginAvailable: false,
           supabaseAuthAvailable: false,
           supabaseUrl: null,
           supabaseAnonKey: null,
-          bootstrapAvailable: true,
         });
         setAdminSession(false);
         setAdminEmail(null);
-        setAdminIsBootstrap(false);
       });
     return () => {
       cancelled = true;
@@ -130,8 +127,6 @@ export function AppDataProvider({ children }) {
       setAdminSession,
       adminEmail,
       setAdminEmail,
-      adminIsBootstrap,
-      setAdminIsBootstrap,
       notify,
       loadScenariosFromServer,
       loadCategoriesFromServer,
@@ -143,7 +138,6 @@ export function AppDataProvider({ children }) {
       serverConfig,
       adminSession,
       adminEmail,
-      adminIsBootstrap,
       notify,
       loadScenariosFromServer,
       loadCategoriesFromServer,
