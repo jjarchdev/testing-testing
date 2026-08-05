@@ -37,8 +37,6 @@ function assertConfigured(name, value) {
   return value;
 }
 
-/* ---------- Connection storage ---------- */
-
 async function loadConnectionRow() {
   const sb = requireSupabase();
   const { data, error } = await sb
@@ -83,8 +81,6 @@ export async function getConnectionStatus() {
   }
 }
 
-/* ---------- OAuth state ---------- */
-
 async function saveOauthState(state, codeVerifier) {
   const sb = requireSupabase();
   const { error } = await sb.from("confluence_oauth_states").insert({
@@ -116,11 +112,8 @@ async function cleanupOauthStates() {
       .delete()
       .lt("expires_at", new Date().toISOString());
   } catch {
-    /* best-effort */
   }
 }
-
-/* ---------- PKCE ---------- */
 
 import { createHash } from "crypto";
 
@@ -134,8 +127,6 @@ function pkce() {
     .replace(/\//g, "_");
   return { verifier, challenge };
 }
-
-/* ---------- Cloud OAuth ---------- */
 
 function cloudClientId() {
   return (process.env.CONFLUENCE_CLIENT_ID || "").trim();
@@ -302,8 +293,6 @@ async function ensureFreshCloudToken(row) {
   return { ...row, ...patch };
 }
 
-/* ---------- Data Center (PAT) ---------- */
-
 function normalizeDcBaseUrl(url) {
   const trimmed = String(url || "").trim().replace(/\/+$/, "");
   if (!/^https?:\/\//i.test(trimmed)) {
@@ -348,8 +337,6 @@ export async function saveDcConnection({ baseUrl, personalAccessToken, username 
   });
   return { ok: true };
 }
-
-/* ---------- API calls (using stored connection) ---------- */
 
 function buildCloudUrl(row, pathAndQuery) {
   if (!row.cloud_id) throw new Error("Cloud connection missing cloud_id");
@@ -402,8 +389,6 @@ function requireConnection() {
     return row;
   });
 }
-
-/* Page fetch + sanitize */
 
 function extractCloudPageHtml(json) {
   const body = json?.body || {};

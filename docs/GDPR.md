@@ -33,7 +33,7 @@ procedures. Deployed at `https://{{APP_HOST}}`.
 
 - Managing procedures and publishing them to employees — **legitimate interest** (workplace administration).
 - Failed-login rate limiting — **legitimate interest** (security, Recital 49).
-- Admin sign-in via Supabase Auth (email address, hashed password, optional Google OAuth identity) — **contract / legitimate interest**.
+- Admin sign-in via Supabase Auth (email address, hashed password) — **contract / legitimate interest**.
 - Confluence integration — **consent** of the connecting admin (Art 6(1)(a)); revoked by clicking Disconnect.
 
 **Recipients / subprocessors:** see §2.

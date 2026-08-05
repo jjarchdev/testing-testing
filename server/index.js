@@ -298,8 +298,6 @@ function parseCategoryBody(body) {
   return { label, sort_order, slug };
 }
 
-/* ---------- Login rate limiting ---------- */
-
 const loginAttempts = new Map();
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_FAILS = 10;
@@ -369,7 +367,6 @@ function supabaseConnectOrigin() {
   }
 }
 
-/* ---------- Security headers ---------- */
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -393,8 +390,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-/* ---------- Uploads ---------- */
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -680,8 +675,6 @@ app.delete("/api/scenarios/:id", requireAuth, async (req, res) => {
   }
 });
 
-/* ---------- Auth ---------- */
-
 app.post("/api/auth/login", (req, res) => {
   if (!envLoginAvailable()) {
     return res.status(503).json({
@@ -772,8 +765,6 @@ app.get("/api/auth/me", (req, res) => {
   });
 });
 
-/* ---------- Admin management ---------- */
-
 app.get("/api/admin/admins", requireAuth, async (_req, res) => {
   if (requireSupabaseInProd(res)) return;
   try {
@@ -843,7 +834,6 @@ app.delete("/api/admin/admins/:email", requireAuth, async (req, res) => {
   }
 });
 
-/* ---------- Admin: data export ---------- */
 app.get("/api/admin/export", requireAuth, async (_req, res) => {
   if (requireSupabaseInProd(res)) return;
   try {
@@ -862,7 +852,6 @@ app.get("/api/admin/export", requireAuth, async (_req, res) => {
         account_label: status?.account_label || null,
       };
     } catch {
-      /* keep default */
     }
     const payload = {
       exported_at: new Date().toISOString(),
@@ -883,8 +872,6 @@ app.get("/api/admin/export", requireAuth, async (_req, res) => {
     res.status(500).json({ error: "Export failed" });
   }
 });
-
-/* ---------- Confluence ---------- */
 
 function confluenceError(res, e) {
   const status = e?.status && Number.isFinite(e.status) ? e.status : 500;
@@ -1021,18 +1008,9 @@ app.get("/api/confluence/page/:id", async (req, res) => {
   }
 });
 
-/* ---------- Uniform 404 for unmatched /api paths ----------
- *
- * Any request under /api that reached this point missed every route above,
- * so return a JSON 404 rather than let Express fall through to the SPA
- * fallback (which would 200 with index.html) or default HTML handlers.
- */
-
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "Not found" });
 });
-
-/* ---------- SPA / static ---------- */
 
 const distPath = path.resolve(ROOT, "dist");
 const indexHtml = path.join(distPath, "index.html");
@@ -1075,7 +1053,6 @@ if (distBundleOk) {
   });
 }
 
-/* ---------- Global error handler ---------- */
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
   const status = Number.isFinite(err?.status) ? err.status : 500;
@@ -1106,8 +1083,6 @@ app.use((err, req, res, _next) => {
     .type("text/plain")
     .send(status >= 500 ? "Server error" : "Error");
 });
-
-/* ---------- Startup ---------- */
 
 const port = Number(process.env.PORT) || 3001;
 if (isProd && (!adminPassword || !jwtSecret)) {

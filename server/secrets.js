@@ -15,9 +15,7 @@ const HKDF_SALT = Buffer.from("qm-playbook:secrets:v1");
 function decodeKeyMaterial(raw) {
   const s = String(raw || "").trim();
   if (!s) return null;
-  // hex
   if (/^[0-9a-f]{64}$/i.test(s)) return Buffer.from(s, "hex");
-  // base64 (32 bytes)
   try {
     const b = Buffer.from(s, "base64");
     if (b.length === KEY_LEN) return b;

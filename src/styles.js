@@ -123,7 +123,7 @@ export const styles = {
     fontWeight: 600,
     fontSize: "0.9rem",
     zIndex: 9999,
-    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(79, 163, 255, 0.25)",
+    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.45)",
   },
 
   homeWrap: {
@@ -131,22 +131,12 @@ export const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background:
-      "linear-gradient(160deg, #0a1220 0%, #0d1520 40%, #12243a 100%)",
+    background: "#0a1220",
     position: "relative",
     overflow: "hidden",
   },
   homeDeco: {
-    position: "absolute",
-    width: 520,
-    height: 520,
-    borderRadius: "50%",
-    right: "-120px",
-    top: "-80px",
-    background:
-      "radial-gradient(circle, rgba(79, 163, 255, 0.28) 0%, rgba(26, 107, 210, 0.12) 40%, transparent 70%)",
-    pointerEvents: "none",
-    filter: "blur(2px)",
+    display: "none",
   },
   homeInner: {
     textAlign: "center",
@@ -189,7 +179,7 @@ export const styles = {
   },
 
   primaryBtn: {
-    background: "linear-gradient(135deg, #4fa3ff 0%, #1a6bd2 100%)",
+    background: "#1a6bd2",
     color: "#fff",
     border: "none",
     padding: "0.8rem 1.5rem",
@@ -201,7 +191,7 @@ export const styles = {
     display: "inline-flex",
     alignItems: "center",
     gap: "0.5rem",
-    boxShadow: "0 8px 20px rgba(26, 107, 210, 0.35), 0 0 0 1px rgba(79, 163, 255, 0.2)",
+    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
   },
   ghostBtn: {
     background: "transparent",
@@ -333,8 +323,8 @@ export const styles = {
   sidebarLogo: {
     width: 38,
     height: 38,
-    borderRadius: 10,
-    background: "linear-gradient(135deg, #4fa3ff 0%, #1a6bd2 100%)",
+    borderRadius: 8,
+    background: "#1a6bd2",
     color: "#fff",
     display: "flex",
     alignItems: "center",
@@ -342,7 +332,6 @@ export const styles = {
     fontWeight: 700,
     fontSize: "0.95rem",
     flexShrink: 0,
-    boxShadow: "0 4px 12px rgba(26, 107, 210, 0.4)",
   },
   sidebarTitle: { fontWeight: 700, fontSize: "1rem", lineHeight: 1.2, color: "#eaf0fb" },
   sidebarSub: { fontSize: "0.75rem", color: "#4fa3ff" },
@@ -586,13 +575,12 @@ export const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background:
-      "linear-gradient(160deg, #0a1220 0%, #0d1520 40%, #12243a 100%)",
+    background: "#0a1220",
   },
   loginBox: {
     background: "#111e2c",
     border: "1px solid #1a2a3a",
-    borderRadius: 16,
+    borderRadius: 12,
     padding: "2.5rem",
     width: "100%",
     maxWidth: 400,
@@ -600,20 +588,19 @@ export const styles = {
     flexDirection: "column",
     gap: "0.75rem",
     alignItems: "stretch",
-    boxShadow: "0 16px 40px rgba(0, 0, 0, 0.4)",
+    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
   },
   loginIcon: {
     width: 48,
     height: 48,
-    borderRadius: 12,
-    background: "linear-gradient(135deg, #4fa3ff 0%, #1a6bd2 100%)",
+    borderRadius: 10,
+    background: "#1a6bd2",
     color: "#fff",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontSize: "1.25rem",
     marginBottom: "0.25rem",
-    boxShadow: "0 6px 16px rgba(26, 107, 210, 0.4)",
   },
   loginTitle: {
     textAlign: "left",

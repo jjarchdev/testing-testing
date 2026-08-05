@@ -1101,7 +1101,6 @@ export default function AdminView() {
     try {
       await logoutAdmin();
     } catch {
-      /* clear local */
     }
     setAdminSession(false);
     setShowAddForm(false);

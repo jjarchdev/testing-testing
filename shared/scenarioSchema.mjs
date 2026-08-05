@@ -147,7 +147,6 @@ export function pickTranslation(scenario, preferred) {
     }
   }
 
-  // Legacy rows with no translation map: use default columns.
   if (!hasAnyTranslation) {
     const title = (scenario.title || "").trim();
     const sc = (scenario.scenario || "").trim();

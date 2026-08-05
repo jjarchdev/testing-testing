@@ -93,8 +93,6 @@ export async function uploadImageFile(file) {
   return data.url;
 }
 
-/* ---------- Confluence ---------- */
-
 async function jsonOrThrow(res) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
