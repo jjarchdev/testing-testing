@@ -1,8 +1,8 @@
 # QM Playbook
 
-A quality-management procedure playbook for teams that need clear, searchable answers to recurring situations.
+A quality-management procedure playbook for teams that need clear, searchable answers and checklist guides to recurring situations.
 
-Employees open the app, find the scenario that matches what they’re dealing with, and follow the documented solution. Admins own the content — categories, procedures, publish state — without shipping a code change.
+Employees open the app, find the scenario that matches what they’re dealing with, and follow the documented solution. Admins own the content — categories, procedures, publish state.
 
 ---
 
