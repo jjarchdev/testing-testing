@@ -24,7 +24,14 @@ export default function AdminLogin() {
     loadCategoriesFromServer,
   } = useAppData();
 
-  const [tab, setTab] = useState("password"); // password | magic | register
+  const envAvailable = !!serverConfig.envLoginAvailable;
+  const requireUsername = !!serverConfig.requireUsername;
+  const supabaseAvailable = !!serverConfig.supabaseAuthAvailable;
+  const anyLogin = envAvailable || supabaseAvailable;
+  const showPanelTabs = envAvailable && supabaseAvailable;
+
+  const [panel, setPanel] = useState("credentials"); // credentials | email
+  const [emailTab, setEmailTab] = useState("password"); // password | magic | register
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,10 +40,11 @@ export default function AdminLogin() {
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const envAvailable = !!serverConfig.envLoginAvailable;
-  const requireUsername = !!serverConfig.requireUsername;
-  const supabaseAvailable = !!serverConfig.supabaseAuthAvailable;
-  const anyLogin = envAvailable || supabaseAvailable;
+  useEffect(() => {
+    if (!serverConfig.loaded) return;
+    if (envAvailable) setPanel("credentials");
+    else if (supabaseAvailable) setPanel("email");
+  }, [serverConfig.loaded, envAvailable, supabaseAvailable]);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,6 +189,12 @@ export default function AdminLogin() {
     }
   };
 
+  const activePanel = showPanelTabs
+    ? panel
+    : envAvailable
+      ? "credentials"
+      : "email";
+
   if (!serverConfig.loaded) {
     return (
       <div style={styles.loginWrap}>
@@ -220,16 +234,42 @@ export default function AdminLogin() {
         <div style={styles.loginIcon}>⚙</div>
         <h2 style={styles.loginTitle}>{t("login.title")}</h2>
 
-        {envAvailable ? (
+        {showPanelTabs ? (
+          <div style={{ ...styles.tabRow, width: "100%", marginTop: "0.25rem" }}>
+            <button
+              type="button"
+              style={{
+                ...styles.tabBtn,
+                ...(activePanel === "credentials" ? styles.tabBtnActive : {}),
+              }}
+              onClick={() => {
+                setPanel("credentials");
+                clearMsgs();
+              }}
+            >
+              {t("login.tabCredentials")}
+            </button>
+            <button
+              type="button"
+              style={{
+                ...styles.tabBtn,
+                ...(activePanel === "email" ? styles.tabBtnActive : {}),
+              }}
+              onClick={() => {
+                setPanel("email");
+                clearMsgs();
+              }}
+            >
+              {t("login.tabEmail")}
+            </button>
+          </div>
+        ) : null}
+
+        {activePanel === "credentials" && envAvailable ? (
           <>
             <p style={styles.loginSub}>
               {requireUsername ? t("login.userAndPass") : t("login.passwordOnly")}
             </p>
-            {supabaseAvailable ? (
-              <p style={{ ...styles.loginSub, marginTop: 0, fontSize: "0.85rem" }}>
-                {t("login.bootstrapTitle")}
-              </p>
-            ) : null}
             <form onSubmit={submitEnvLogin} style={loginForm}>
               {requireUsername ? (
                 <input
@@ -245,7 +285,12 @@ export default function AdminLogin() {
               <div style={{ position: "relative", width: "100%" }}>
                 <input
                   type={showPassword ? "text" : "password"}
-                  style={{ ...styles.loginInput, width: "100%", boxSizing: "border-box", paddingRight: "4.5rem" }}
+                  style={{
+                    ...styles.loginInput,
+                    width: "100%",
+                    boxSizing: "border-box",
+                    paddingRight: "4.5rem",
+                  }}
                   placeholder={t("login.password")}
                   value={password}
                   disabled={busy}
@@ -262,12 +307,12 @@ export default function AdminLogin() {
                   {showPassword ? t("login.hidePassword") : t("login.showPassword")}
                 </button>
               </div>
-              {error && !supabaseAvailable ? (
+              {error ? (
                 <div style={styles.loginError} role="alert">
                   {error}
                 </div>
               ) : null}
-              {info && !supabaseAvailable ? <div style={loginInfo}>{info}</div> : null}
+              {info ? <div style={loginInfo}>{info}</div> : null}
               <button type="submit" style={styles.primaryBtn} disabled={busy}>
                 {busy ? t("login.signingIn") : t("login.signIn")}
               </button>
@@ -275,19 +320,26 @@ export default function AdminLogin() {
           </>
         ) : null}
 
-        {supabaseAvailable ? (
+        {activePanel === "email" && supabaseAvailable ? (
           <>
-            {envAvailable ? (
-              <p style={{ ...styles.loginSub, marginTop: "1.25rem", marginBottom: 0 }}>
-                {t("login.orSupabase")}
-              </p>
+            {!showPanelTabs ? (
+              <p style={styles.loginSub}>{t("login.emailSubtitle")}</p>
             ) : null}
-            <div style={{ ...styles.tabRow, width: "100%", marginTop: "0.5rem" }}>
+            <div
+              style={{
+                ...styles.tabRow,
+                width: "100%",
+                marginTop: showPanelTabs ? 0 : "0.25rem",
+              }}
+            >
               <button
                 type="button"
-                style={{ ...styles.tabBtn, ...(tab === "password" ? styles.tabBtnActive : {}) }}
+                style={{
+                  ...styles.tabBtn,
+                  ...(emailTab === "password" ? styles.tabBtnActive : {}),
+                }}
                 onClick={() => {
-                  setTab("password");
+                  setEmailTab("password");
                   clearMsgs();
                 }}
               >
@@ -295,9 +347,12 @@ export default function AdminLogin() {
               </button>
               <button
                 type="button"
-                style={{ ...styles.tabBtn, ...(tab === "magic" ? styles.tabBtnActive : {}) }}
+                style={{
+                  ...styles.tabBtn,
+                  ...(emailTab === "magic" ? styles.tabBtnActive : {}),
+                }}
                 onClick={() => {
-                  setTab("magic");
+                  setEmailTab("magic");
                   clearMsgs();
                 }}
               >
@@ -305,9 +360,12 @@ export default function AdminLogin() {
               </button>
               <button
                 type="button"
-                style={{ ...styles.tabBtn, ...(tab === "register" ? styles.tabBtnActive : {}) }}
+                style={{
+                  ...styles.tabBtn,
+                  ...(emailTab === "register" ? styles.tabBtnActive : {}),
+                }}
                 onClick={() => {
-                  setTab("register");
+                  setEmailTab("register");
                   clearMsgs();
                 }}
               >
@@ -315,7 +373,7 @@ export default function AdminLogin() {
               </button>
             </div>
 
-            {tab === "password" ? (
+            {emailTab === "password" ? (
               <form onSubmit={submitPassword} style={loginForm}>
                 <input
                   type="email"
@@ -329,7 +387,12 @@ export default function AdminLogin() {
                 <div style={{ position: "relative", width: "100%" }}>
                   <input
                     type={showPassword ? "text" : "password"}
-                    style={{ ...styles.loginInput, width: "100%", boxSizing: "border-box", paddingRight: "4.5rem" }}
+                    style={{
+                      ...styles.loginInput,
+                      width: "100%",
+                      boxSizing: "border-box",
+                      paddingRight: "4.5rem",
+                    }}
                     placeholder={t("login.password")}
                     value={password}
                     disabled={busy}
@@ -346,7 +409,11 @@ export default function AdminLogin() {
                     {showPassword ? t("login.hidePassword") : t("login.showPassword")}
                   </button>
                 </div>
-                {error ? <div style={styles.loginError} role="alert">{error}</div> : null}
+                {error ? (
+                  <div style={styles.loginError} role="alert">
+                    {error}
+                  </div>
+                ) : null}
                 {info ? <div style={loginInfo}>{info}</div> : null}
                 <button type="submit" style={styles.primaryBtn} disabled={busy}>
                   {busy ? t("login.signingIn") : t("login.signIn")}
@@ -360,7 +427,7 @@ export default function AdminLogin() {
                   {t("login.forgot")}
                 </button>
               </form>
-            ) : tab === "magic" ? (
+            ) : emailTab === "magic" ? (
               <form onSubmit={submitMagicLink} style={loginForm}>
                 <input
                   type="email"
@@ -370,7 +437,11 @@ export default function AdminLogin() {
                   disabled={busy}
                   onChange={(e) => setEmail(e.target.value)}
                 />
-                {error ? <div style={styles.loginError} role="alert">{error}</div> : null}
+                {error ? (
+                  <div style={styles.loginError} role="alert">
+                    {error}
+                  </div>
+                ) : null}
                 {info ? <div style={loginInfo}>{info}</div> : null}
                 <button type="submit" style={styles.primaryBtn} disabled={busy}>
                   {busy ? t("login.sending") : t("login.sendMagic")}
@@ -398,7 +469,11 @@ export default function AdminLogin() {
                 <p style={{ fontSize: "0.8rem", color: "#8899aa", margin: 0 }}>
                   {t("login.registerNote")}
                 </p>
-                {error ? <div style={styles.loginError} role="alert">{error}</div> : null}
+                {error ? (
+                  <div style={styles.loginError} role="alert">
+                    {error}
+                  </div>
+                ) : null}
                 {info ? <div style={loginInfo}>{info}</div> : null}
                 <button type="submit" style={styles.primaryBtn} disabled={busy}>
                   {busy ? t("login.working") : t("login.register")}
@@ -406,12 +481,6 @@ export default function AdminLogin() {
               </form>
             )}
           </>
-        ) : null}
-
-        {envAvailable && error && supabaseAvailable ? (
-          <div style={{ ...styles.loginError, marginTop: "0.75rem" }} role="alert">
-            {error}
-          </div>
         ) : null}
 
         <button
