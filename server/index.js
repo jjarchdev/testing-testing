@@ -357,19 +357,32 @@ const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 
+function supabaseConnectOrigin() {
+  const raw = (process.env.SUPABASE_URL || "").trim();
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "https:" && !(u.protocol === "http:" && !isProd)) return "";
+    return u.origin;
+  } catch {
+    return "";
+  }
+}
+
 /* ---------- Security headers ---------- */
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  const connectSrc = ["'self'", supabaseConnectOrigin()].filter(Boolean).join(" ");
   const csp = [
     "default-src 'self'",
     "img-src 'self' data: blob: https:",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "script-src 'self'",
-    "connect-src 'self'",
+    `connect-src ${connectSrc}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -766,6 +779,19 @@ app.get("/api/admin/admins", requireAuth, async (_req, res) => {
     res.json({ admins });
   } catch (e) {
     console.error("[admins:list]", e?.message || e);
+    const msg = String(e?.message || e?.details || "");
+    if (/app_admins|relation|42P01|does not exist/i.test(msg)) {
+      return res.status(503).json({
+        error:
+          "Admin table missing. Run supabase/migrations/004_admins.sql in the Supabase SQL Editor, then retry.",
+      });
+    }
+    if (/permission denied|42501|row-level security/i.test(msg)) {
+      return res.status(503).json({
+        error:
+          "No permission to read app_admins. Grant the secret/service_role key access (see DEPLOY.md).",
+      });
+    }
     res.status(500).json({ error: "Read failed" });
   }
 });

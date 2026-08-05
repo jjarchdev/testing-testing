@@ -14,7 +14,8 @@ Follow these steps in order. The browser never talks to Supabase directly — on
    * **Authentication → URL Configuration**: set **Site URL** to `https://<your-service>.onrender.com` and add both that URL and `http://localhost:5173/*` under **Redirect URLs**.
    * **Authentication → Email Templates**: optionally rebrand the sign-up / reset templates.
 4b. For multiple images per scenario, run [`supabase/migrations/004_scenario_images.sql`](supabase/migrations/004_scenario_images.sql)
-5. Confirm tables exist under **Table Editor**: `categories`, `scenarios` (both empty is correct)
+4c. For per-language scenario text (required by the current admin UI), run [`supabase/migrations/005_scenario_translations.sql`](supabase/migrations/005_scenario_translations.sql)
+5. Confirm tables/columns exist under **Table Editor**: `categories`, `scenarios` (with `image_urls` and `translations`), and (for Manage Admins) `app_admins`
 6. **Storage** (for admin image uploads): create a **public** bucket named `scenario-images` (see [`supabase/STORAGE.md`](supabase/STORAGE.md)). The server also tries to create this bucket on first upload when `SUPABASE_SECRET_KEY` is set.
 7. **Project Settings → API**:
    - Copy **Project URL** → use as `SUPABASE_URL`
@@ -34,6 +35,7 @@ grant all on table public.scenarios to service_role;
 grant usage, select on all sequences in schema public to service_role;
 grant select on public.scenarios_employee to anon, authenticated, service_role;
 grant select on public.scenarios_admin to service_role;
+grant all on table public.app_admins to service_role;
 ```
 
 ### Clear old sample data (only if you ran an older seeded migration)
@@ -68,7 +70,7 @@ Expect `storage: supabase` from health, and `connected`-style JSON from the chec
 | `JWT_SECRET` | yes | Long random string (32+ chars) — signs the httpOnly admin session cookie |
 | `SUPABASE_URL` | yes | From Supabase |
 | `SUPABASE_SECRET_KEY` | yes | New secret key (`sb_secret_...`), not legacy service_role |
-| `SUPABASE_ANON_KEY` | optional | Needed only for Supabase Auth (email/magic link) in the browser. Env login works without it. |
+| `SUPABASE_ANON_KEY` | optional | Needed only for email sign-in/registration in the browser. Env login works without it. Must be set with `SUPABASE_URL` so CSP can allow Auth API calls to that origin. |
 | `ADMIN_USER` | recommended | Extra login gate (username) for env login |
 | `VITE_API_BASE` | no | Leave unset / empty (same-origin so the session cookie works) |
 | `CONFLUENCE_CLIENT_ID` | no | Only for Confluence Cloud OAuth (3LO) |

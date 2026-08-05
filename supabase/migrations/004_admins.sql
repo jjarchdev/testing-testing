@@ -23,5 +23,6 @@ create index if not exists app_admins_email_lower_idx
   on public.app_admins (lower(email));
 
 alter table public.app_admins enable row level security;
--- No policies for anon / authenticated: only the service_role key (server) can read/write.
+-- No policies for anon / authenticated: only the service_role / secret key (server) can read/write.
 grant all on table public.app_admins to service_role;
+grant select, insert, update, delete on table public.app_admins to service_role;
