@@ -41,17 +41,3 @@ Browser  →  Express (React SPA + /api)  →  Supabase Postgres
 Designed to run as **one Render web service**. Data persists in Supabase across deploys.
 
 ---
-
-### Run locally
-
-```bash
-cp .env.example .env
-npm install
-npm run dev
-```
-
-UI at `http://localhost:5173` (proxies `/api`). API at `:3001`.
-
-### Ship it
-
-Run the schema in Supabase, point Render at this repo, set admin + Supabase env vars. Step-by-step: **[DEPLOY.md](DEPLOY.md)**.
