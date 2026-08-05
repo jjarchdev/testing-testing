@@ -23,6 +23,8 @@ export function AppDataProvider({ children }) {
     supabaseAuthAvailable: false,
     supabaseUrl: null,
     supabaseAnonKey: null,
+    privacyControllerName: null,
+    privacyControllerEmail: null,
   });
   const [adminSession, setAdminSession] = useState(false);
   const [adminEmail, setAdminEmail] = useState(null);
@@ -91,6 +93,8 @@ export function AppDataProvider({ children }) {
           supabaseAuthAvailable: !!data?.supabaseAuthAvailable,
           supabaseUrl: data?.supabaseUrl || null,
           supabaseAnonKey: data?.supabaseAnonKey || null,
+          privacyControllerName: data?.privacyControllerName || null,
+          privacyControllerEmail: data?.privacyControllerEmail || null,
         });
         const isAdmin = !!(sessionInfo && sessionInfo.admin);
         setAdminSession(isAdmin);
@@ -106,6 +110,8 @@ export function AppDataProvider({ children }) {
           supabaseAuthAvailable: false,
           supabaseUrl: null,
           supabaseAnonKey: null,
+          privacyControllerName: null,
+          privacyControllerEmail: null,
         });
         setAdminSession(false);
         setAdminEmail(null);

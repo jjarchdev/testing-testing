@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import LanguageSwitcher from "./LanguageSwitcher.jsx";
+import { useAppData } from "./AppData.jsx";
 import { localePath } from "./utils.js";
 import { styles } from "./styles.js";
 
@@ -8,6 +9,12 @@ export default function PrivacyView() {
   const { t } = useTranslation();
   const { lng } = useParams();
   const navigate = useNavigate();
+  const { serverConfig } = useAppData();
+
+  const org =
+    serverConfig.privacyControllerName || t("privacy.controllerFallbackOrg");
+  const email =
+    serverConfig.privacyControllerEmail || t("privacy.controllerFallbackEmail");
 
   return (
     <div style={styles.homeWrap}>
@@ -32,9 +39,7 @@ export default function PrivacyView() {
 
         <section style={privacySectionStyle}>
           <h2 style={privacyH2}>{t("privacy.controllerHeading")}</h2>
-          <p style={privacyP}>
-            {t("privacy.controllerBody", { org: "{{CONTROLLER}}", email: "{{EMAIL}}" })}
-          </p>
+          <p style={privacyP}>{t("privacy.controllerBody", { org, email })}</p>
         </section>
 
         <section style={privacySectionStyle}>
@@ -110,7 +115,7 @@ export default function PrivacyView() {
             <li>{t("privacy.rights.object")}</li>
             <li>{t("privacy.rights.complain")}</li>
           </ul>
-          <p style={privacyP}>{t("privacy.contactBody", { email: "{{EMAIL}}" })}</p>
+          <p style={privacyP}>{t("privacy.contactBody", { email })}</p>
         </section>
 
         <section style={privacySectionStyle}>
@@ -123,6 +128,6 @@ export default function PrivacyView() {
 }
 
 const privacySectionStyle = { marginBottom: "1.75rem" };
-const privacyH2 = { color: "#4fa3ff", fontSize: "1.05rem", marginBottom: "0.35rem" };
-const privacyP = { color: "#eaf0fb", lineHeight: 1.55, margin: "0.35rem 0" };
-const privacyUl = { color: "#eaf0fb", lineHeight: 1.55, paddingLeft: "1.2rem", margin: "0.35rem 0" };
+const privacyH2 = { fontSize: "1.15rem", marginBottom: "0.5rem", color: "#eaf0fb" };
+const privacyP = { color: "#b8c5d6", lineHeight: 1.55, marginTop: 0 };
+const privacyUl = { color: "#b8c5d6", lineHeight: 1.55, paddingLeft: "1.25rem", marginTop: 0 };

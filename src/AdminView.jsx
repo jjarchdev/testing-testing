@@ -290,6 +290,12 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
     [initial, defaultCategory]
   );
   const [form, setForm] = useState(baseline);
+  const [enabledLangs, setEnabledLangs] = useState(() => {
+    const filled = SUPPORTED_SCENARIO_LOCALES.filter((l) => slotHasContent(baseline.translations[l]));
+    if (filled.length) return filled;
+    const ui = (i18n.language || "en").toLowerCase();
+    return [SUPPORTED_SCENARIO_LOCALES.includes(ui) ? ui : "en"];
+  });
   const [activeLang, setActiveLang] = useState(() => {
     const filled = SUPPORTED_SCENARIO_LOCALES.find((l) => slotHasContent(baseline.translations[l]));
     if (filled) return filled;
@@ -307,7 +313,39 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
     setForm(baseline);
     setUrlDraft("");
     setFormError("");
-  }, [baseline]);
+    const filled = SUPPORTED_SCENARIO_LOCALES.filter((l) => slotHasContent(baseline.translations[l]));
+    const nextEnabled = filled.length
+      ? filled
+      : [SUPPORTED_SCENARIO_LOCALES.includes((i18n.language || "en").toLowerCase())
+          ? (i18n.language || "en").toLowerCase()
+          : "en"];
+    setEnabledLangs(nextEnabled);
+    setActiveLang(nextEnabled[0]);
+  }, [baseline, i18n.language]);
+
+  const toggleLang = (lng) => {
+    setFormError("");
+    setEnabledLangs((prev) => {
+      if (prev.includes(lng)) {
+        if (prev.length === 1) {
+          setFormError(t("scenarioForm.languagesNeedOne"));
+          return prev;
+        }
+        const next = prev.filter((l) => l !== lng);
+        setForm((f) => ({
+          ...f,
+          translations: {
+            ...f.translations,
+            [lng]: { title: "", scenario: "", solution: "", tags: "" },
+          },
+        }));
+        if (activeLang === lng) setActiveLang(next[0]);
+        return next;
+      }
+      setActiveLang(lng);
+      return [...prev, lng];
+    });
+  };
 
   const dirty = useMemo(
     () =>
@@ -463,7 +501,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       setFormError(t("scenarioForm.needCategory"));
       return;
     }
-    const complete = SUPPORTED_SCENARIO_LOCALES.filter((lng) => {
+    const complete = enabledLangs.filter((lng) => {
       const s = form.translations[lng];
       return s.title.trim() && s.scenario.trim() && s.solution.trim();
     });
@@ -471,7 +509,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       setFormError(t("scenarioForm.needOneLanguage"));
       return;
     }
-    const partial = SUPPORTED_SCENARIO_LOCALES.filter(
+    const partial = enabledLangs.filter(
       (lng) =>
         slotHasContent(form.translations[lng]) && !complete.includes(lng)
     );
@@ -481,9 +519,15 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
     setFormError("");
     setBusy(true);
     try {
+      const translationsForSave = {};
+      for (const lng of SUPPORTED_SCENARIO_LOCALES) {
+        translationsForSave[lng] = enabledLangs.includes(lng)
+          ? form.translations[lng]
+          : { title: "", scenario: "", solution: "", tags: "" };
+      }
       await onSave({
         category: form.category,
-        translations: translationsToApi(form.translations),
+        translations: translationsToApi(translationsForSave),
         primary_language: complete.includes(activeLang) ? activeLang : complete[0],
         image_urls: form.image_urls,
         confluence_page_id: form.confluence_page_id,
@@ -532,14 +576,32 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>
         {t("scenarioForm.languagesHelp")}
       </p>
-      <div style={{ ...styles.tabRow, marginBottom: "0.85rem" }}>
-        {SUPPORTED_SCENARIO_LOCALES.map((lng) => {
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginBottom: "0.75rem" }}>
+        {SUPPORTED_SCENARIO_LOCALES.map((lng) => (
+          <label
+            key={lng}
+            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.9rem", cursor: "pointer" }}
+          >
+            <input
+              type="checkbox"
+              checked={enabledLangs.includes(lng)}
+              disabled={busy}
+              onChange={() => toggleLang(lng)}
+            />
+            {t("scenarioForm.languagesEnable", { lang: LANG_LABELS[lng] })}
+          </label>
+        ))}
+      </div>
+      <div style={{ ...styles.tabRow, marginBottom: "0.85rem" }} role="tablist" aria-label={t("scenarioForm.languagesLabel")}>
+        {enabledLangs.map((lng) => {
           const filled = slotHasContent(form.translations[lng]);
           const isActive = lng === activeLang;
           return (
             <button
               key={lng}
               type="button"
+              role="tab"
+              aria-selected={isActive}
               onClick={() => setActiveLang(lng)}
               style={{
                 ...styles.tabBtn,
@@ -548,11 +610,10 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
                 alignItems: "center",
                 gap: 6,
               }}
-              aria-pressed={isActive}
             >
               {LANG_LABELS[lng]}
               <span
-                aria-hidden
+                aria-label={filled ? t("scenarioForm.langFilled") : t("scenarioForm.langEmpty")}
                 style={{
                   width: 6,
                   height: 6,
@@ -597,6 +658,9 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         disabled={busy}
         onChange={(e) => patchLang(activeLang, "solution", e.target.value)}
       />
+      <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>
+        {t("scenarioForm.solutionHelp")}
+      </p>
 
       <label style={styles.label}>
         {t("scenarioForm.tags")} ({LANG_LABELS[activeLang]})
@@ -662,7 +726,11 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           })}
         </span>
       </div>
-      {form.image_urls.length > 0 ? (
+      {form.image_urls.length === 0 ? (
+        <p style={{ color: "#8899aa", fontSize: "0.85rem", marginTop: "0.5rem" }}>
+          {t("admin.noImagesYet")}
+        </p>
+      ) : (
         <div
           style={{
             display: "grid",
@@ -684,7 +752,11 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
             >
               <img
                 src={url}
-                alt=""
+                alt={t("admin.imageBroken")}
+                onError={(e) => {
+                  e.currentTarget.style.opacity = "0.35";
+                  e.currentTarget.alt = t("admin.imageBroken");
+                }}
                 style={{
                   display: "block",
                   width: "100%",
@@ -716,6 +788,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
                   disabled={busy || uploading || index === 0}
                   onClick={() => moveImage(index, -1)}
                   title={t("scenarioForm.moveUp")}
+                  aria-label={t("scenarioForm.moveUp")}
                 >
                   ↑
                 </button>
@@ -725,6 +798,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
                   disabled={busy || uploading || index === form.image_urls.length - 1}
                   onClick={() => moveImage(index, 1)}
                   title={t("scenarioForm.moveDown")}
+                  aria-label={t("scenarioForm.moveDown")}
                 >
                   ↓
                 </button>
@@ -757,7 +831,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
             </div>
           ))}
         </div>
-      ) : null}
+      )}
 
       <label style={styles.label}>{t("scenarioForm.confluencePage")}</label>
       <ConfluencePagePicker
@@ -1146,6 +1220,27 @@ export default function AdminView() {
         >
           {t("admin.manageAdmins")}
         </button>
+        <button
+          type="button"
+          style={{ ...styles.ghostBtn, margin: "0 1rem 0.5rem", justifyContent: "center" }}
+          onClick={async () => {
+            try {
+              const res = await apiFetchWithAuth("/api/admin/export");
+              if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || t("admin.exportFailed"));
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `qm-playbook-export-${new Date().toISOString().slice(0, 10)}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            } catch (err) {
+              notify(err?.message || t("admin.exportFailed"), "error");
+            }
+          }}
+        >
+          {t("admin.exportData")}
+        </button>
         {adminEmail ? (
           <div style={{ padding: "0 1rem 0.5rem", color: "#8899aa", fontSize: "0.75rem", textAlign: "center", wordBreak: "break-word" }}>
             {adminEmail}
@@ -1213,10 +1308,32 @@ export default function AdminView() {
               </span>
             </div>
             {categoryList.length === 0 ? (
-              <div style={styles.empty}>{t("admin.needCategories")}</div>
+              <div style={styles.empty}>
+                <div>{t("admin.needCategories")}</div>
+                <button
+                  type="button"
+                  style={{ ...styles.primaryBtn, marginTop: "0.75rem" }}
+                  onClick={() => setShowCategoryManager(true)}
+                >
+                  {t("admin.needCategoriesCta")}
+                </button>
+              </div>
             ) : scenarioList.length === 0 ? (
-              <div style={styles.empty}>{t("admin.noScenarios")}</div>
+              <div style={styles.empty}>
+                <div>{t("admin.noScenarios")}</div>
+                <button
+                  type="button"
+                  style={{ ...styles.primaryBtn, marginTop: "0.75rem" }}
+                  onClick={() => {
+                    setEditingScenario(null);
+                    setShowAddForm(true);
+                  }}
+                >
+                  {t("admin.noScenariosCta")}
+                </button>
+              </div>
             ) : null}
+            <div style={styles.adminTableWrap}>
             <div style={styles.adminTable}>
               {scenarioList.length > 0 ? (
                 <div style={styles.tableHead}>
@@ -1286,6 +1403,7 @@ export default function AdminView() {
                   )}
                 </div>
               ))}
+            </div>
             </div>
           </>
         )}

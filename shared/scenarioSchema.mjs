@@ -135,27 +135,34 @@ export function sanitizeTranslations(raw) {
 export function pickTranslation(scenario, preferred) {
   if (!scenario) return null;
   const t = scenario.translations || {};
-  const order = [
-    preferred,
-    "en",
-    "de",
-    "sq",
-  ].filter((lng, i, arr) => lng && arr.indexOf(lng) === i);
-  for (const lng of order) {
+  const hasAnyTranslation = SUPPORTED_SCENARIO_LOCALES.some((lng) => {
     const slot = t[lng];
+    return slot && ((slot.title || "").trim() || (slot.scenario || "").trim() || (slot.solution || "").trim());
+  });
+
+  if (preferred) {
+    const slot = t[preferred];
     if (slot && (slot.title || "").trim() && (slot.scenario || "").trim() && (slot.solution || "").trim()) {
-      return { ...slot, _language: lng };
+      return { ...slot, _language: preferred };
     }
   }
-  // Fallback to the default columns.
-  const fallback = {
-    title: scenario.title || "",
-    scenario: scenario.scenario || "",
-    solution: scenario.solution || "",
-    tags: Array.isArray(scenario.tags) ? scenario.tags : [],
-    _language: null,
-  };
-  return fallback;
+
+  // Legacy rows with no translation map: use default columns.
+  if (!hasAnyTranslation) {
+    const title = (scenario.title || "").trim();
+    const sc = (scenario.scenario || "").trim();
+    const sol = (scenario.solution || "").trim();
+    if (!title || !sc || !sol) return null;
+    return {
+      title: scenario.title || "",
+      scenario: scenario.scenario || "",
+      solution: scenario.solution || "",
+      tags: Array.isArray(scenario.tags) ? scenario.tags : [],
+      _language: null,
+    };
+  }
+
+  return null;
 }
 
 export function normalizeScenario(s, options = {}) {

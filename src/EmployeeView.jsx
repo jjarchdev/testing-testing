@@ -42,45 +42,51 @@ function parseSolutionBlocks(solution) {
   const NUM_RE = /^\s*(\d+)\.\s+(.+)$/;
   const blocks = [];
   let paraBuf = [];
-  let stepBuf = [];
+
   const flushPara = () => {
     if (!paraBuf.length) return;
     const joined = paraBuf.join("\n").trim();
     if (joined) blocks.push({ type: "para", text: joined, key: `p-${blocks.length}` });
     paraBuf = [];
   };
-  const flushSteps = () => {
-    if (!stepBuf.length) return;
-    blocks.push({
-      type: "steps",
-      steps: stepBuf,
-      key: `s-${blocks.length}`,
-    });
-    stepBuf = [];
+
+  const pushSteps = (steps) => {
+    if (steps.length < 2) {
+      for (const s of steps) paraBuf.push(`${s.num}. ${s.text}`);
+      return;
+    }
+    flushPara();
+    blocks.push({ type: "steps", steps, key: `s-${blocks.length}` });
   };
 
-  for (let i = 0; i < lines.length; i++) {
+  let i = 0;
+  while (i < lines.length) {
     const line = lines[i];
-    const m = line.match(NUM_RE);
-    if (m) {
-      flushPara();
-      stepBuf.push({
-        key: `${i}-${m[2].slice(0, 24)}`,
-        num: m[1],
-        text: m[2].trim(),
-      });
-      continue;
-    }
     if (line.trim() === "") {
       flushPara();
-      flushSteps();
+      i += 1;
       continue;
     }
-    flushSteps();
+    const m = line.match(NUM_RE);
+    if (m) {
+      const run = [];
+      while (i < lines.length) {
+        const nm = lines[i].match(NUM_RE);
+        if (!nm) break;
+        run.push({
+          key: `${i}-${nm[2].slice(0, 24)}`,
+          num: nm[1],
+          text: nm[2].trim(),
+        });
+        i += 1;
+      }
+      pushSteps(run);
+      continue;
+    }
     paraBuf.push(line);
+    i += 1;
   }
   flushPara();
-  flushSteps();
   return blocks;
 }
 
@@ -509,16 +515,19 @@ export default function EmployeeView() {
 
   const filteredScenarios = useMemo(() => {
     return scenarioList.filter((s) => {
+      if (!viewFor(s)) return false;
       const matchesSearch = scenarioMatchesQuery(s, searchQuery);
       const matchesCat = filterCategory === ALL_FILTER || s.category === filterCategory;
       return matchesSearch && matchesCat;
     });
-  }, [scenarioList, searchQuery, filterCategory]);
+  }, [scenarioList, searchQuery, filterCategory, activeLng]);
 
   const recentScenarios = useMemo(() => {
     const byId = new Map(scenarioList.map((s) => [s.id, s]));
-    return recentIds.map((id) => byId.get(id)).filter(Boolean);
-  }, [scenarioList, recentIds]);
+    return recentIds
+      .map((id) => byId.get(id))
+      .filter((s) => s && viewFor(s));
+  }, [scenarioList, recentIds, activeLng]);
 
   const isFiltering = Boolean(searchQuery.trim()) || filterCategory !== ALL_FILTER;
 
@@ -549,8 +558,13 @@ export default function EmployeeView() {
     }
     if (!scenarioList.some((s) => s.id === id)) {
       navigate(localePath(lng, "employee"), { replace: true });
+      return;
     }
-  }, [scenarios, scenarioId, scenarioList, lng, navigate]);
+    const sc = scenarioList.find((s) => s.id === id);
+    if (sc && !pickTranslation(sc, activeLng)) {
+      navigate(localePath(lng, "employee"), { replace: true });
+    }
+  }, [scenarios, scenarioId, scenarioList, lng, navigate, activeLng]);
 
   useEffect(() => {
     if (selectedScenario) {
@@ -588,6 +602,7 @@ export default function EmployeeView() {
   const emptyMessage = () => {
     if (searchQuery.trim()) return t("employee.emptySearch");
     if (filterCategory !== ALL_FILTER) return t("employee.emptyCategory");
+    if (scenarioList.length > 0) return t("employee.emptyLanguage");
     return t("employee.emptyPublished");
   };
 

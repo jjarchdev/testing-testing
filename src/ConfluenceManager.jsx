@@ -14,11 +14,17 @@ export default function ConfluenceManager({ onBack, onChanged }) {
   const [flavor, setFlavor] = useState("cloud");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageKind, setMessageKind] = useState("ok");
   const [dcForm, setDcForm] = useState({
     baseUrl: "",
     username: "",
     personalAccessToken: "",
   });
+
+  const showMessage = (text, kind = "ok") => {
+    setMessage(text);
+    setMessageKind(kind);
+  };
 
   const load = () => {
     setStatus({ loading: true, data: null, error: "" });
@@ -60,7 +66,7 @@ export default function ConfluenceManager({ onBack, onChanged }) {
       const url = await startConfluenceCloudConnect();
       window.location.assign(url);
     } catch (err) {
-      setMessage(err?.message || t("confluence.connectFailed"));
+      showMessage(err?.message || t("confluence.connectFailed"), "error");
     } finally {
       setBusy(false);
     }
@@ -69,7 +75,7 @@ export default function ConfluenceManager({ onBack, onChanged }) {
   const connectDc = async () => {
     if (busy) return;
     if (!dcForm.baseUrl.trim() || !dcForm.personalAccessToken.trim()) {
-      setMessage(t("confluence.dcNeedFields"));
+      showMessage(t("confluence.dcNeedFields"), "error");
       return;
     }
     setBusy(true);
@@ -77,11 +83,11 @@ export default function ConfluenceManager({ onBack, onChanged }) {
     try {
       await connectConfluenceDc(dcForm);
       setDcForm({ baseUrl: "", username: "", personalAccessToken: "" });
-      setMessage(t("confluence.connectedOk"));
+      showMessage(t("confluence.connectedOk"), "ok");
       load();
       onChanged?.();
     } catch (err) {
-      setMessage(err?.message || t("confluence.connectFailed"));
+      showMessage(err?.message || t("confluence.connectFailed"), "error");
     } finally {
       setBusy(false);
     }
@@ -94,11 +100,11 @@ export default function ConfluenceManager({ onBack, onChanged }) {
     setMessage("");
     try {
       await disconnectConfluence();
-      setMessage(t("confluence.disconnected"));
+      showMessage(t("confluence.disconnected"), "ok");
       load();
       onChanged?.();
     } catch (err) {
-      setMessage(err?.message || t("confluence.disconnectFailed"));
+      showMessage(err?.message || t("confluence.disconnectFailed"), "error");
     } finally {
       setBusy(false);
     }
@@ -120,7 +126,12 @@ export default function ConfluenceManager({ onBack, onChanged }) {
       {status.loading ? (
         <div style={styles.empty}>{t("confluence.loadingStatus")}</div>
       ) : status.error ? (
-        <div style={styles.formInlineError}>{status.error}</div>
+        <div style={styles.formInlineError} role="alert">
+          {status.error}
+          <button type="button" style={{ ...styles.ghostBtn, marginTop: 8 }} onClick={load}>
+            {t("employee.retry")}
+          </button>
+        </div>
       ) : connected ? (
         <div style={styles.confluenceStatusBox}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
@@ -153,9 +164,11 @@ export default function ConfluenceManager({ onBack, onChanged }) {
 
       {message ? (
         <div
+          role={messageKind === "error" ? "alert" : "status"}
           style={{
             ...styles.confluenceStatusBox,
-            borderColor: /fail|error|invalid|reject/i.test(message) ? "#e67e22" : "#1abc9c",
+            borderColor: messageKind === "error" ? "#e67e22" : "#1abc9c",
+            color: messageKind === "error" ? "#e67e22" : "#1abc9c",
           }}
         >
           {message}

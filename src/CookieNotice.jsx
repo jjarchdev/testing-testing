@@ -61,7 +61,6 @@ export default function CookieNotice() {
         <button
           type="button"
           onClick={() => {
-            dismiss();
             if (lng) navigate(localePath(lng, "privacy"));
           }}
           style={{

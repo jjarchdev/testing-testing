@@ -217,6 +217,14 @@ export const styles = {
     alignItems: "center",
     gap: "0.5rem",
   },
+  btnDisabled: {
+    opacity: 0.55,
+    cursor: "not-allowed",
+  },
+  adminTableWrap: {
+    width: "100%",
+    overflowX: "auto",
+  },
   btnIcon: {
     fontSize: "0.85rem",
     lineHeight: 1,

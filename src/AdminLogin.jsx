@@ -39,6 +39,7 @@ export default function AdminLogin() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [exchanging, setExchanging] = useState(false);
 
   useEffect(() => {
     if (!serverConfig.loaded) return;
@@ -55,6 +56,7 @@ export default function AdminLogin() {
       const { data } = await client.auth.getSession();
       const token = data?.session?.access_token;
       if (!token) return;
+      setExchanging(true);
       try {
         await exchangeForAppSession(token);
         setAdminSession(true);
@@ -62,6 +64,8 @@ export default function AdminLogin() {
         navigate(localePath(lng, "admin"), { replace: true });
       } catch (err) {
         setError(err?.message || t("login.exchangeFailed"));
+      } finally {
+        if (!cancelled) setExchanging(false);
       }
     })();
     return () => {
@@ -69,6 +73,12 @@ export default function AdminLogin() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabaseAvailable]);
+
+  const authErrorMessage = (err) => {
+    const msg = String(err?.message || "");
+    if (/rate.?limit|over_email/i.test(msg)) return t("login.rateLimited");
+    return msg || t("login.failed");
+  };
 
   const clearMsgs = () => {
     setError("");
@@ -94,7 +104,7 @@ export default function AdminLogin() {
       });
       await finishLogin();
     } catch (err) {
-      setError(err?.message || t("login.failed"));
+      setError(authErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -118,7 +128,7 @@ export default function AdminLogin() {
       await exchangeForAppSession(token);
       await finishLogin();
     } catch (err) {
-      setError(err?.message || t("login.failed"));
+      setError(authErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -139,7 +149,7 @@ export default function AdminLogin() {
       if (authError) throw new Error(authError.message);
       setInfo(t("login.magicSent"));
     } catch (err) {
-      setError(err?.message || t("login.failed"));
+      setError(authErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -161,7 +171,7 @@ export default function AdminLogin() {
       if (authError) throw new Error(authError.message);
       setInfo(t("login.registerSent"));
     } catch (err) {
-      setError(err?.message || t("login.failed"));
+      setError(authErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -183,7 +193,7 @@ export default function AdminLogin() {
       if (authError) throw new Error(authError.message);
       setInfo(t("login.resetSent"));
     } catch (err) {
-      setError(err?.message || t("login.failed"));
+      setError(authErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -195,12 +205,12 @@ export default function AdminLogin() {
       ? "credentials"
       : "email";
 
-  if (!serverConfig.loaded) {
+  if (!serverConfig.loaded || exchanging) {
     return (
       <div style={styles.loginWrap}>
         <main style={styles.loginBox}>
           <div style={styles.loginIcon}>⚙</div>
-          <p style={styles.loginSub}>{t("login.wait")}</p>
+          <p style={styles.loginSub}>{exchanging ? t("login.exchanging") : t("login.wait")}</p>
         </main>
       </div>
     );
@@ -235,9 +245,11 @@ export default function AdminLogin() {
         <h2 style={styles.loginTitle}>{t("login.title")}</h2>
 
         {showPanelTabs ? (
-          <div style={{ ...styles.tabRow, width: "100%", marginTop: "0.25rem" }}>
+          <div style={{ ...styles.tabRow, width: "100%", marginTop: "0.25rem" }} role="tablist" aria-label={t("login.title")}>
             <button
               type="button"
+              role="tab"
+              aria-selected={activePanel === "credentials"}
               style={{
                 ...styles.tabBtn,
                 ...(activePanel === "credentials" ? styles.tabBtnActive : {}),
@@ -251,6 +263,8 @@ export default function AdminLogin() {
             </button>
             <button
               type="button"
+              role="tab"
+              aria-selected={activePanel === "email"}
               style={{
                 ...styles.tabBtn,
                 ...(activePanel === "email" ? styles.tabBtnActive : {}),
@@ -272,18 +286,25 @@ export default function AdminLogin() {
             </p>
             <form onSubmit={submitEnvLogin} style={loginForm}>
               {requireUsername ? (
-                <input
-                  type="text"
-                  style={styles.loginInput}
-                  placeholder={t("login.username")}
-                  value={username}
-                  disabled={busy}
-                  autoComplete="username"
-                  onChange={(e) => setUsername(e.target.value)}
-                />
+                <>
+                  <label style={fieldLabel} htmlFor="admin-username">{t("login.username")}</label>
+                  <input
+                    id="admin-username"
+                    type="text"
+                    style={styles.loginInput}
+                    placeholder={t("login.username")}
+                    value={username}
+                    disabled={busy}
+                    autoComplete="username"
+                    aria-label={t("login.username")}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </>
               ) : null}
+              <label style={fieldLabel} htmlFor="admin-password">{t("login.password")}</label>
               <div style={{ position: "relative", width: "100%" }}>
                 <input
+                  id="admin-password"
                   type={showPassword ? "text" : "password"}
                   style={{
                     ...styles.loginInput,
@@ -295,6 +316,7 @@ export default function AdminLogin() {
                   value={password}
                   disabled={busy}
                   autoComplete="current-password"
+                  aria-label={t("login.password")}
                   onChange={(e) => setPassword(e.target.value)}
                 />
                 <button
@@ -312,8 +334,12 @@ export default function AdminLogin() {
                   {error}
                 </div>
               ) : null}
-              {info ? <div style={loginInfo}>{info}</div> : null}
-              <button type="submit" style={styles.primaryBtn} disabled={busy}>
+              {info ? (
+                <div style={loginInfo} role="status">
+                  {info}
+                </div>
+              ) : null}
+              <button type="submit" style={{ ...styles.primaryBtn, ...(busy ? styles.btnDisabled : {}) }} disabled={busy}>
                 {busy ? t("login.signingIn") : t("login.signIn")}
               </button>
             </form>
@@ -331,9 +357,13 @@ export default function AdminLogin() {
                 width: "100%",
                 marginTop: showPanelTabs ? 0 : "0.25rem",
               }}
+              role="tablist"
+              aria-label={t("login.emailSubtitle")}
             >
               <button
                 type="button"
+                role="tab"
+                aria-selected={emailTab === "password"}
                 style={{
                   ...styles.tabBtn,
                   ...(emailTab === "password" ? styles.tabBtnActive : {}),
@@ -347,6 +377,8 @@ export default function AdminLogin() {
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={emailTab === "magic"}
                 style={{
                   ...styles.tabBtn,
                   ...(emailTab === "magic" ? styles.tabBtnActive : {}),
@@ -360,6 +392,8 @@ export default function AdminLogin() {
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={emailTab === "register"}
                 style={{
                   ...styles.tabBtn,
                   ...(emailTab === "register" ? styles.tabBtnActive : {}),
@@ -375,17 +409,22 @@ export default function AdminLogin() {
 
             {emailTab === "password" ? (
               <form onSubmit={submitPassword} style={loginForm}>
+                <label style={fieldLabel} htmlFor="email-login">{t("login.emailPlaceholder")}</label>
                 <input
+                  id="email-login"
                   type="email"
                   style={styles.loginInput}
                   placeholder={t("login.emailPlaceholder")}
                   value={email}
                   disabled={busy}
                   autoComplete="username"
+                  aria-label={t("login.emailPlaceholder")}
                   onChange={(e) => setEmail(e.target.value)}
                 />
+                <label style={fieldLabel} htmlFor="email-password">{t("login.password")}</label>
                 <div style={{ position: "relative", width: "100%" }}>
                   <input
+                    id="email-password"
                     type={showPassword ? "text" : "password"}
                     style={{
                       ...styles.loginInput,
@@ -397,6 +436,7 @@ export default function AdminLogin() {
                     value={password}
                     disabled={busy}
                     autoComplete="current-password"
+                    aria-label={t("login.password")}
                     onChange={(e) => setPassword(e.target.value)}
                   />
                   <button
@@ -414,13 +454,17 @@ export default function AdminLogin() {
                     {error}
                   </div>
                 ) : null}
-                {info ? <div style={loginInfo}>{info}</div> : null}
-                <button type="submit" style={styles.primaryBtn} disabled={busy}>
+                {info ? (
+                  <div style={loginInfo} role="status">
+                    {info}
+                  </div>
+                ) : null}
+                <button type="submit" style={{ ...styles.primaryBtn, ...(busy ? styles.btnDisabled : {}) }} disabled={busy}>
                   {busy ? t("login.signingIn") : t("login.signIn")}
                 </button>
                 <button
                   type="button"
-                  style={{ ...styles.ghostBtn, marginTop: 4 }}
+                  style={{ ...styles.ghostBtn, marginTop: 4, ...(busy ? styles.btnDisabled : {}) }}
                   onClick={forgotPassword}
                   disabled={busy}
                 >
@@ -429,12 +473,15 @@ export default function AdminLogin() {
               </form>
             ) : emailTab === "magic" ? (
               <form onSubmit={submitMagicLink} style={loginForm}>
+                <label style={fieldLabel} htmlFor="magic-email">{t("login.emailPlaceholder")}</label>
                 <input
+                  id="magic-email"
                   type="email"
                   style={styles.loginInput}
                   placeholder={t("login.emailPlaceholder")}
                   value={email}
                   disabled={busy}
+                  aria-label={t("login.emailPlaceholder")}
                   onChange={(e) => setEmail(e.target.value)}
                 />
                 {error ? (
@@ -442,28 +489,38 @@ export default function AdminLogin() {
                     {error}
                   </div>
                 ) : null}
-                {info ? <div style={loginInfo}>{info}</div> : null}
-                <button type="submit" style={styles.primaryBtn} disabled={busy}>
+                {info ? (
+                  <div style={loginInfo} role="status">
+                    {info}
+                  </div>
+                ) : null}
+                <button type="submit" style={{ ...styles.primaryBtn, ...(busy ? styles.btnDisabled : {}) }} disabled={busy}>
                   {busy ? t("login.sending") : t("login.sendMagic")}
                 </button>
               </form>
             ) : (
               <form onSubmit={submitRegister} style={loginForm}>
+                <label style={fieldLabel} htmlFor="register-email">{t("login.emailPlaceholder")}</label>
                 <input
+                  id="register-email"
                   type="email"
                   style={styles.loginInput}
                   placeholder={t("login.emailPlaceholder")}
                   value={email}
                   disabled={busy}
+                  aria-label={t("login.emailPlaceholder")}
                   onChange={(e) => setEmail(e.target.value)}
                 />
+                <label style={fieldLabel} htmlFor="register-password">{t("login.password")}</label>
                 <input
+                  id="register-password"
                   type="password"
                   style={styles.loginInput}
                   placeholder={t("login.password")}
                   value={password}
                   disabled={busy}
                   autoComplete="new-password"
+                  aria-label={t("login.password")}
                   onChange={(e) => setPassword(e.target.value)}
                 />
                 <p style={{ fontSize: "0.8rem", color: "#8899aa", margin: 0 }}>
@@ -474,8 +531,12 @@ export default function AdminLogin() {
                     {error}
                   </div>
                 ) : null}
-                {info ? <div style={loginInfo}>{info}</div> : null}
-                <button type="submit" style={styles.primaryBtn} disabled={busy}>
+                {info ? (
+                  <div style={loginInfo} role="status">
+                    {info}
+                  </div>
+                ) : null}
+                <button type="submit" style={{ ...styles.primaryBtn, ...(busy ? styles.btnDisabled : {}) }} disabled={busy}>
                   {busy ? t("login.working") : t("login.register")}
                 </button>
               </form>
@@ -501,6 +562,11 @@ const loginForm = {
   flexDirection: "column",
   gap: "0.75rem",
   width: "100%",
+};
+const fieldLabel = {
+  fontSize: "0.8rem",
+  color: "#8899aa",
+  marginBottom: -4,
 };
 const loginInfo = {
   padding: "0.5rem 0.75rem",

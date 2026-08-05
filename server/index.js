@@ -482,6 +482,8 @@ app.get("/api/config", (_req, res) => {
     supabaseAuthAvailable: isSupabaseConfigured() && !!(process.env.SUPABASE_ANON_KEY || "").trim(),
     supabaseUrl: isSupabaseConfigured() ? process.env.SUPABASE_URL : null,
     supabaseAnonKey: (process.env.SUPABASE_ANON_KEY || "").trim() || null,
+    privacyControllerName: (process.env.PRIVACY_CONTROLLER_NAME || "").trim() || null,
+    privacyControllerEmail: (process.env.PRIVACY_CONTROLLER_EMAIL || "").trim() || null,
   });
 });
 
