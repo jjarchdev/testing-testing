@@ -27,7 +27,6 @@ Employees open the app, find the scenario that matches what they’re dealing wi
 
 ### How it’s built
 
-Single app, two surfaces (employee + admin), one API.
 
 ```
 Browser  →  Express (React SPA + /api)  →  Supabase Postgres
@@ -38,6 +37,5 @@ Browser  →  Express (React SPA + /api)  →  Supabase Postgres
 - **Data** — Supabase Postgres in production; optional local file store for quick dev
 - **Auth** — Shared admin password for demo purposes; session in an httpOnly cookie (not `sessionStorage`)
 
-Designed to run as **one Render web service**. Data persists in Supabase across deploys.
 
 ---
