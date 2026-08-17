@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import LanguageSwitcher from "./LanguageSwitcher.jsx";
 import ConfluenceView from "./ConfluenceView.jsx";
 import { useAppData } from "./AppData.jsx";
-import { pickTranslation } from "../shared/scenarioSchema.mjs";
+import { pickTranslation, VERDICT_CODES } from "../shared/scenarioSchema.mjs";
 import { ALL_FILTER, accentForCategory, buildCategoryCounts, localePath } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
 import { pushRecentId, readRecentIds } from "./recent.js";
@@ -90,6 +90,43 @@ function parseSolutionBlocks(solution) {
   return blocks;
 }
 
+function parseParagraphBlocks(solution) {
+  const text = String(solution || "")
+    .replace(/\r\n?/g, "\n")
+    .trim();
+  if (!text) return [];
+  return text
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p, i) => ({ type: "para", text: p, key: `p-${i}` }));
+}
+
+function verdictBadgeStyle(code) {
+  if (code === "to_be_rejected") return { color: "#e74c3c", borderColor: "#e74c3c" };
+  if (code === "acceptable") return { color: "#1abc9c", borderColor: "#1abc9c" };
+  return { color: "#e67e22", borderColor: "#e67e22" };
+}
+
+function VerdictBadge({ code, t }) {
+  if (!VERDICT_CODES.includes(code)) return null;
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        fontSize: "0.72rem",
+        fontWeight: 700,
+        padding: "0.15rem 0.5rem",
+        borderRadius: 6,
+        border: "1px solid",
+        ...verdictBadgeStyle(code),
+      }}
+    >
+      {t(`verdict.${code}`)}
+    </span>
+  );
+}
+
 function totalStepCount(blocks) {
   return blocks.reduce((n, b) => n + (b.type === "steps" ? b.steps.length : 0), 0);
 }
@@ -131,6 +168,7 @@ function scenarioImageUrls(scenario) {
 }
 
 function ScenarioCard({ scenario, view, onSelect, openLabel }) {
+  const { t } = useTranslation();
   const color = accentForCategory(scenario.category);
   const text = view.scenario;
   const snippet = text.length > 100 ? `${text.slice(0, 100)}…` : text;
@@ -185,6 +223,7 @@ function ScenarioCard({ scenario, view, onSelect, openLabel }) {
         </div>
       ) : null}
       <div style={styles.cardCat}>{scenario.category}</div>
+      <VerdictBadge code={scenario.verdict} t={t} />
       <h3 style={styles.cardTitle}>{title}</h3>
       <p style={styles.cardSnippet}>{snippet}</p>
       <div style={styles.cardTags}>
@@ -201,13 +240,19 @@ function ScenarioCard({ scenario, view, onSelect, openLabel }) {
 
 function ScenarioDetail({ scenario, view, onBack, onNotify }) {
   const { t } = useTranslation();
-  const blocks = useMemo(() => parseSolutionBlocks(view.solution), [view.solution]);
+  const blocks = useMemo(
+    () =>
+      scenario.solution_as_checklist
+        ? parseSolutionBlocks(view?.solution)
+        : parseParagraphBlocks(view?.solution),
+    [view?.solution, scenario.solution_as_checklist]
+  );
   const stepTotal = useMemo(() => totalStepCount(blocks), [blocks]);
   const images = useMemo(() => scenarioImageUrls(scenario), [scenario]);
   const [checked, setChecked] = useState(() => ({}));
   const [lightboxIndex, setLightboxIndex] = useState(null);
-  const title = view.title || scenario.title;
-  const tags = Array.isArray(view.tags) && view.tags.length ? view.tags : scenario.tags;
+  const title = view?.title || scenario.title;
+  const tags = Array.isArray(view?.tags) && view.tags.length ? view.tags : scenario.tags;
 
   useEffect(() => {
     setChecked({});
@@ -233,7 +278,7 @@ function ScenarioDetail({ scenario, view, onBack, onNotify }) {
 
   const copyProcedure = async () => {
     const bodyParts = [title, ""];
-    if (view.scenario) {
+    if (view?.scenario) {
       bodyParts.push(`${t("employee.situation")}:`, view.scenario, "");
     }
     bodyParts.push(`${t("employee.procedure")}:`);
@@ -308,6 +353,9 @@ function ScenarioDetail({ scenario, view, onBack, onNotify }) {
       <h2 id="scenario-detail-title" style={styles.detailTitle}>
         {title}
       </h2>
+      <div style={{ margin: "0 0 0.75rem" }}>
+        <VerdictBadge code={scenario.verdict} t={t} />
+      </div>
       {images.length > 0 ? (
         <div style={galleryStyle}>
           {images.map((url, i) => (
@@ -415,7 +463,7 @@ function ScenarioDetail({ scenario, view, onBack, onNotify }) {
         ) : null}
       </div>
 
-      {view.scenario ? (
+      {view?.scenario ? (
         <div style={styles.detailSection}>
           <div style={styles.detailSectionLabel}>{t("employee.situation")}</div>
           <ParagraphText text={view.scenario} baseStyle={styles.detailBody} />
@@ -496,13 +544,19 @@ export default function EmployeeView() {
   const viewFor = (s) => pickTranslation(s, activeLng);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterCategory, setFilterCategory] = useState(ALL_FILTER);
+  const [filterVerdict, setFilterVerdict] = useState(null);
   const [recentIds, setRecentIds] = useState(() => readRecentIds());
   const narrow = useIsNarrow();
   const [navOpen, setNavOpen] = useState(false);
   const searchRef = useRef(null);
+  const searching = Boolean(searchQuery.trim());
 
   const scenarioList = scenarios ?? [];
-  const categoryCounts = useMemo(() => buildCategoryCounts(scenarioList), [scenarioList]);
+  const classifiedList = useMemo(
+    () => scenarioList.filter((s) => viewFor(s) && VERDICT_CODES.includes(s.verdict)),
+    [scenarioList, activeLng]
+  );
+  const categoryCounts = useMemo(() => buildCategoryCounts(classifiedList), [classifiedList]);
   const categoryLabels = useMemo(() => (categories || []).map((c) => c.label), [categories]);
   const allCategories = useMemo(() => [ALL_FILTER, ...categoryLabels], [categoryLabels]);
 
@@ -513,23 +567,43 @@ export default function EmployeeView() {
     return scenarioList.find((s) => s.id === id) || null;
   }, [scenarioList, scenarioId]);
 
+  const inCategory = useMemo(
+    () =>
+      classifiedList.filter(
+        (s) => filterCategory === ALL_FILTER || s.category === filterCategory
+      ),
+    [classifiedList, filterCategory]
+  );
+
+  const verdictCounts = useMemo(() => {
+    const by = { to_be_rejected: 0, acceptable: 0, grey_area: 0 };
+    for (const s of inCategory) {
+      if (by[s.verdict] != null) by[s.verdict] += 1;
+    }
+    return by;
+  }, [inCategory]);
+
+  const visibleVerdicts = useMemo(
+    () => VERDICT_CODES.filter((code) => verdictCounts[code] > 0),
+    [verdictCounts]
+  );
+
   const filteredScenarios = useMemo(() => {
-    return scenarioList.filter((s) => {
-      if (!viewFor(s)) return false;
-      const matchesSearch = scenarioMatchesQuery(s, searchQuery);
+    return classifiedList.filter((s) => {
       const matchesCat = filterCategory === ALL_FILTER || s.category === filterCategory;
-      return matchesSearch && matchesCat;
+      if (!matchesCat) return false;
+      if (searching) return scenarioMatchesQuery(s, searchQuery);
+      if (filterVerdict && s.verdict !== filterVerdict) return false;
+      return true;
     });
-  }, [scenarioList, searchQuery, filterCategory, activeLng]);
+  }, [classifiedList, searchQuery, filterCategory, filterVerdict, searching]);
 
   const recentScenarios = useMemo(() => {
-    const byId = new Map(scenarioList.map((s) => [s.id, s]));
-    return recentIds
-      .map((id) => byId.get(id))
-      .filter((s) => s && viewFor(s));
-  }, [scenarioList, recentIds, activeLng]);
+    const byId = new Map(classifiedList.map((s) => [s.id, s]));
+    return recentIds.map((id) => byId.get(id)).filter(Boolean);
+  }, [classifiedList, recentIds]);
 
-  const isFiltering = Boolean(searchQuery.trim()) || filterCategory !== ALL_FILTER;
+  const showVerdictStep = !selectedScenario && !searching && !filterVerdict;
 
   const openScenario = (scenario) => {
     if (!scenario) return;
@@ -585,6 +659,18 @@ export default function EmployeeView() {
         }
         if (selectedScenario) {
           closeDetail();
+          return;
+        }
+        if (searching) {
+          setSearchQuery("");
+          return;
+        }
+        if (filterVerdict) {
+          setFilterVerdict(null);
+          return;
+        }
+        if (filterCategory !== ALL_FILTER) {
+          setFilterCategory(ALL_FILTER);
         }
         return;
       }
@@ -597,12 +683,13 @@ export default function EmployeeView() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navOpen, selectedScenario, narrow, lng]);
+  }, [navOpen, selectedScenario, narrow, lng, searching, filterVerdict, filterCategory]);
 
   const emptyMessage = () => {
-    if (searchQuery.trim()) return t("employee.emptySearch");
+    if (searching) return t("employee.emptySearch");
+    if (filterVerdict) return t("employee.emptyVerdict");
     if (filterCategory !== ALL_FILTER) return t("employee.emptyCategory");
-    if (scenarioList.length > 0) return t("employee.emptyLanguage");
+    if (classifiedList.length > 0) return t("employee.emptyLanguage");
     return t("employee.emptyPublished");
   };
 
@@ -728,6 +815,7 @@ export default function EmployeeView() {
               }}
               onClick={() => {
                 setFilterCategory(cat);
+                setFilterVerdict(null);
                 if (selectedScenario) closeDetail();
                 setNavOpen(false);
               }}
@@ -768,9 +856,13 @@ export default function EmployeeView() {
             <span style={styles.mobileBarTitle}>
               {selectedScenario
                 ? selectedScenario.title
-                : filterCategory === ALL_FILTER
+                : searching
                   ? t("employee.allScenarios")
-                  : filterCategory}
+                  : filterVerdict
+                    ? t(`verdict.${filterVerdict}`)
+                    : filterCategory === ALL_FILTER
+                      ? t("employee.chooseVerdict")
+                      : filterCategory}
             </span>
           </div>
         ) : null}
@@ -783,21 +875,80 @@ export default function EmployeeView() {
               {t("employee.retry")}
             </button>
           </div>
-        ) : selectedScenario ? (
+        ) : selectedScenario && viewFor(selectedScenario) ? (
           <ScenarioDetail
             scenario={selectedScenario}
             view={viewFor(selectedScenario)}
             onBack={closeDetail}
             onNotify={notify}
           />
-        ) : (
+        ) : showVerdictStep ? (
           <>
             <div style={styles.mainHeader}>
               <h2 style={styles.mainTitle}>
-                {filterCategory === ALL_FILTER ? t("employee.allScenarios") : filterCategory}
+                {filterCategory === ALL_FILTER ? t("employee.chooseVerdict") : filterCategory}
               </h2>
               <span style={styles.mainCount}>
-                {isFiltering
+                {t("employee.proceduresCount", { count: inCategory.length })}
+              </span>
+            </div>
+            {visibleVerdicts.length === 0 ? (
+              <div style={styles.empty}>{emptyMessage()}</div>
+            ) : (
+              <div style={styles.cardGrid}>
+                {visibleVerdicts.map((code) => (
+                  <div
+                    key={code}
+                    role="button"
+                    tabIndex={0}
+                    style={styles.card}
+                    onClick={() => setFilterVerdict(code)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setFilterVerdict(code);
+                      }
+                    }}
+                  >
+                    <div
+                      style={{
+                        ...styles.cardAccent,
+                        background:
+                          code === "to_be_rejected"
+                            ? "#e74c3c"
+                            : code === "acceptable"
+                              ? "#1abc9c"
+                              : "#e67e22",
+                      }}
+                    />
+                    <h3 style={styles.cardTitle}>{t(`verdict.${code}`)}</h3>
+                    <p style={styles.cardSnippet}>
+                      {t("employee.proceduresCount", { count: verdictCounts[code] })}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div style={styles.mainHeader}>
+              <div>
+                {!searching && filterVerdict ? (
+                  <button type="button" style={styles.detailBack} onClick={() => setFilterVerdict(null)}>
+                    {t("employee.backToVerdicts")}
+                  </button>
+                ) : null}
+                <h2 style={styles.mainTitle}>
+                  {searching
+                    ? filterCategory === ALL_FILTER
+                      ? t("employee.allScenarios")
+                      : filterCategory
+                    : t(`verdict.${filterVerdict}`)}
+                </h2>
+              </div>
+              <span style={styles.mainCount}>
+                {searching
                   ? t("employee.filteredCount", { count: filteredScenarios.length })
                   : t("employee.proceduresCount", { count: filteredScenarios.length })}
               </span>

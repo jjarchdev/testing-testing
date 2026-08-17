@@ -47,6 +47,8 @@ const {
   SUPPORTED_SCENARIO_LOCALES,
   sanitizeConfluencePageId,
   sanitizeConfluenceUrl,
+  parseVerdict,
+  coerceSolutionAsChecklist,
 } = await import("../shared/scenarioSchema.mjs");
 const { normalizeCategory } = await import("../shared/categoryMap.mjs");
 const { saveUploadedImage, UPLOADS_DIR, removeStoredImages, imageUrlsFromScenario, urlsRemovedFromScenario } =
@@ -256,6 +258,19 @@ function parseScenarioBody(body) {
     }
   }
 
+  const verdictParsed = parseVerdict(body?.verdict);
+  if (verdictParsed === undefined) {
+    const err = new Error("Invalid verdict");
+    err.code = "INVALID_VERDICT";
+    throw err;
+  }
+  if (!verdictParsed) {
+    const err = new Error("Verdict required");
+    err.code = "VERDICT_REQUIRED";
+    throw err;
+  }
+  const verdict = verdictParsed;
+
   const row = {
     category: body?.category,
     title: derivedTitle,
@@ -273,6 +288,8 @@ function parseScenarioBody(body) {
         ? body.confluence_page_title.slice(0, 240)
         : "",
     is_published: body?.is_published !== false && body?.is_published !== "false",
+    solution_as_checklist: coerceSolutionAsChecklist(body?.solution_as_checklist),
+    verdict,
   };
   const normalized = normalizeScenario(
     {

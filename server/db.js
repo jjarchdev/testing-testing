@@ -86,6 +86,8 @@ export function rowToScenario(row) {
       confluence_page_title:
         typeof row.confluence_page_title === "string" ? row.confluence_page_title : "",
       is_published: typeof row.is_published === "boolean" ? row.is_published : undefined,
+      solution_as_checklist: row.solution_as_checklist === true,
+      verdict: row.verdict ?? null,
     },
     allowLocal
   );
@@ -329,6 +331,8 @@ export async function insertScenario(payload) {
       confluence_page_title: payload.confluence_page_title || null,
       sort_order: payload.sort_order ?? 0,
       is_published: payload.is_published !== false,
+      solution_as_checklist: payload.solution_as_checklist === true,
+      verdict: payload.verdict || null,
     })
     .select("id")
     .single();
@@ -358,6 +362,8 @@ export async function updateScenario(id, payload) {
     confluence_page_url: payload.confluence_page_url || null,
     confluence_page_title: payload.confluence_page_title || null,
     sort_order: payload.sort_order ?? 0,
+    solution_as_checklist: payload.solution_as_checklist === true,
+    verdict: payload.verdict || null,
   };
   if (typeof payload.is_published === "boolean") {
     updates.is_published = payload.is_published;

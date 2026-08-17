@@ -1,5 +1,17 @@
 export const MAX_SCENARIO_IMAGES = 8;
 export const SUPPORTED_SCENARIO_LOCALES = ["en", "de", "sq"];
+export const VERDICT_CODES = ["to_be_rejected", "acceptable", "grey_area"];
+
+export function parseVerdict(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  return VERDICT_CODES.includes(s) ? s : undefined;
+}
+
+export function coerceSolutionAsChecklist(value) {
+  return value === true || value === 1 || value === "true";
+}
 const TAG_MAX_LEN = 60;
 const TITLE_MAX_LEN = 240;
 const BODY_MAX_LEN = 20_000;
@@ -182,6 +194,8 @@ export function normalizeScenario(s, options = {}) {
     confluence_page_url: sanitizeConfluenceUrl(s.confluence_page_url),
     confluence_page_title:
       typeof s.confluence_page_title === "string" ? s.confluence_page_title.slice(0, 240) : "",
+    solution_as_checklist: coerceSolutionAsChecklist(s.solution_as_checklist),
+    verdict: parseVerdict(s.verdict) || null,
   };
   if (typeof s.is_published === "boolean") {
     out.is_published = s.is_published;

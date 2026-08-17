@@ -10,7 +10,7 @@ import ConfluencePagePicker from "./ConfluencePagePicker.jsx";
 import { localePath } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
 import { styles } from "./styles.js";
-import { SUPPORTED_SCENARIO_LOCALES } from "../shared/scenarioSchema.mjs";
+import { SUPPORTED_SCENARIO_LOCALES, VERDICT_CODES } from "../shared/scenarioSchema.mjs";
 
 const MAX_SCENARIO_IMAGES = 8;
 
@@ -286,6 +286,8 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       confluence_page_url: initial?.confluence_page_url || "",
       confluence_page_title: initial?.confluence_page_title || "",
       is_published: initial?.is_published !== false,
+      solution_as_checklist: initial?.solution_as_checklist === true,
+      verdict: initial?.verdict || "",
     }),
     [initial, defaultCategory]
   );
@@ -355,7 +357,9 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       form.confluence_page_id !== baseline.confluence_page_id ||
       form.confluence_page_url !== baseline.confluence_page_url ||
       form.confluence_page_title !== baseline.confluence_page_title ||
-      form.is_published !== baseline.is_published,
+      form.is_published !== baseline.is_published ||
+      form.solution_as_checklist !== baseline.solution_as_checklist ||
+      form.verdict !== baseline.verdict,
     [form, baseline]
   );
 
@@ -501,6 +505,10 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       setFormError(t("scenarioForm.needCategory"));
       return;
     }
+    if (!VERDICT_CODES.includes(form.verdict)) {
+      setFormError(t("scenarioForm.verdictRequired"));
+      return;
+    }
     const complete = enabledLangs.filter((lng) => {
       const s = form.translations[lng];
       return s.title.trim() && s.scenario.trim() && s.solution.trim();
@@ -534,6 +542,8 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         confluence_page_url: form.confluence_page_url,
         confluence_page_title: form.confluence_page_title,
         is_published: form.is_published,
+        solution_as_checklist: form.solution_as_checklist,
+        verdict: form.verdict,
       });
     } finally {
       setBusy(false);
@@ -570,6 +580,21 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
             </option>
           ))
         )}
+      </select>
+
+      <label style={styles.label}>{t("scenarioForm.verdict")}</label>
+      <select
+        style={styles.select}
+        value={form.verdict}
+        onChange={(e) => patch("verdict", e.target.value)}
+        disabled={busy}
+      >
+        <option value="">{t("scenarioForm.verdictPlaceholder")}</option>
+        {VERDICT_CODES.map((code) => (
+          <option key={code} value={code}>
+            {t(`verdict.${code}`)}
+          </option>
+        ))}
       </select>
 
       <label style={styles.label}>{t("scenarioForm.languagesLabel")}</label>
@@ -651,15 +676,51 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       <label style={styles.label}>
         {t("scenarioForm.solution")} ({LANG_LABELS[activeLang]})
       </label>
+      <div
+        role="radiogroup"
+        aria-label={t("scenarioForm.solutionMode")}
+        style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem" }}
+      >
+        {[
+          { value: false, key: "solutionModeText" },
+          { value: true, key: "solutionModeChecklist" },
+        ].map((opt) => {
+          const active = form.solution_as_checklist === opt.value;
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={busy}
+              onClick={() => patch("solution_as_checklist", opt.value)}
+              style={{
+                ...styles.ghostBtn,
+                padding: "0.4rem 0.85rem",
+                fontSize: "0.85rem",
+                ...(active ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
+              }}
+            >
+              {t(`scenarioForm.${opt.key}`)}
+            </button>
+          );
+        })}
+      </div>
       <textarea
         style={{ ...styles.input, height: 200 }}
-        placeholder={t("scenarioForm.solutionPlaceholder")}
+        placeholder={
+          form.solution_as_checklist
+            ? t("scenarioForm.solutionPlaceholderChecklist")
+            : t("scenarioForm.solutionPlaceholder")
+        }
         value={form.translations[activeLang].solution}
         disabled={busy}
         onChange={(e) => patchLang(activeLang, "solution", e.target.value)}
       />
       <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>
-        {t("scenarioForm.solutionHelp")}
+        {form.solution_as_checklist
+          ? t("scenarioForm.solutionHelpChecklist")
+          : t("scenarioForm.solutionHelp")}
       </p>
 
       <label style={styles.label}>
@@ -971,6 +1032,8 @@ export default function AdminView() {
       confluence_page_id: data.confluence_page_id || "",
       confluence_page_url: data.confluence_page_url || "",
       confluence_page_title: data.confluence_page_title || "",
+      solution_as_checklist: data.solution_as_checklist === true,
+      verdict: data.verdict || "",
     };
     try {
       const res = editingScenario
@@ -1338,6 +1401,7 @@ export default function AdminView() {
                 <div style={styles.tableHead}>
                   <span style={{ flex: 2 }}>{t("admin.colTitle")}</span>
                   <span style={{ flex: 1 }}>{t("admin.colCategory")}</span>
+                  <span style={{ flex: 1 }}>{t("admin.colVerdict")}</span>
                   <span style={{ width: 80 }}>{t("admin.colStatus")}</span>
                   <span style={{ flex: 1, textAlign: "right" }}>{t("admin.colActions")}</span>
                 </div>
@@ -1366,6 +1430,9 @@ export default function AdminView() {
                     <>
                       <span style={{ flex: 2, fontWeight: 600, color: "#eaf0fb" }}>{row.title}</span>
                       <span style={{ flex: 1, color: "#8899aa" }}>{row.category}</span>
+                      <span style={{ flex: 1, color: "#8899aa", fontSize: "0.85rem" }}>
+                        {VERDICT_CODES.includes(row.verdict) ? t(`verdict.${row.verdict}`) : "—"}
+                      </span>
                       <span
                         style={{
                           width: 80,
