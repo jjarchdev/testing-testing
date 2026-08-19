@@ -20,18 +20,54 @@ export function sanitizeWp(value) {
   return String(value).trim().slice(0, WP_MAX_LEN);
 }
 
+export function sanitizeWpList(value) {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === "string" && value.trim()
+      ? value.split(/[,;]/)
+      : [];
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    const w = sanitizeWp(item);
+    if (!w || seen.has(w)) continue;
+    seen.add(w);
+    out.push(w);
+  }
+  return out;
+}
+
+export function normalizeWorkPackage(row) {
+  if (!row || typeof row !== "object") return null;
+  const slug = typeof row.slug === "string" ? row.slug.trim() : "";
+  const label = sanitizeWp(row.label);
+  if (!slug || !label) return null;
+  const sort_order = Number(row.sort_order);
+  return {
+    slug,
+    label,
+    sort_order: Number.isFinite(sort_order) ? sort_order : 0,
+  };
+}
+
+export function normalizeWorkPackageList(list) {
+  if (!Array.isArray(list)) return null;
+  return list.map(normalizeWorkPackage).filter(Boolean);
+}
+
 export function normalizeCategory(row) {
   if (!row || typeof row !== "object") return null;
   const slug = typeof row.slug === "string" ? row.slug.trim() : "";
   const label = typeof row.label === "string" ? row.label.trim() : "";
   if (!slug || !label) return null;
   const sort_order = Number(row.sort_order);
-  const wp = sanitizeWp(row.wp);
+  let wps = sanitizeWpList(row.wps);
+  if (!wps.length) wps = sanitizeWpList(row.wp);
   return {
     slug,
     label,
     sort_order: Number.isFinite(sort_order) ? sort_order : 0,
-    wp,
+    wps,
   };
 }
 

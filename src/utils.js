@@ -41,6 +41,8 @@ export function localePath(lng, ...parts) {
 
 export function formatCategoryLabel(label, wp) {
   const l = String(label || "").trim();
-  const w = String(wp || "").trim();
+  const w = Array.isArray(wp)
+    ? wp.map((x) => String(x || "").trim()).filter(Boolean).join(", ")
+    : String(wp || "").trim();
   return w ? `${l} · ${w}` : l;
 }

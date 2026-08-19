@@ -2,13 +2,18 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { normalizeCategory, sanitizeWp, slugifyLabel } from "../shared/categoryMap.mjs";
+import {
+  normalizeCategory,
+  normalizeWorkPackage,
+  sanitizeWpList,
+  slugifyLabel,
+} from "../shared/categoryMap.mjs";
 import { normalizeScenario } from "../shared/scenarioSchema.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const DATA_FILE = process.env.SCENARIOS_DATA_PATH || path.join(ROOT, "data", "scenarios.json");
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 
 async function readRaw() {
   await ensureDataFile();
@@ -31,6 +36,7 @@ function defaultPayload() {
   return {
     v: STORAGE_VERSION,
     categories: [],
+    workPackages: [],
     scenarios: [],
   };
 }
@@ -56,6 +62,51 @@ function parseCategoryList(rawList) {
   return normalized;
 }
 
+function parseWorkPackageList(rawList) {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map(normalizeWorkPackage).filter(Boolean);
+}
+
+function collectWorkPackages(categories, existing) {
+  const byLabel = new Map();
+  for (const w of existing || []) {
+    const n = normalizeWorkPackage(w);
+    if (n) byLabel.set(n.label, n);
+  }
+  for (const c of categories) {
+    for (const label of c.wps || []) {
+      if (byLabel.has(label)) continue;
+      let slug;
+      try {
+        slug = slugifyLabel(label);
+      } catch {
+        continue;
+      }
+      if ([...byLabel.values()].some((p) => p.slug === slug)) {
+        slug = `${slug}_${Date.now().toString(36)}`;
+      }
+      byLabel.set(label, {
+        slug,
+        label,
+        sort_order: byLabel.size + 1,
+      });
+    }
+  }
+  return [...byLabel.values()].sort(
+    (a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label)
+  );
+}
+
+function withCategoryWps(scenarios, categories) {
+  const byLabel = Object.create(null);
+  for (const c of categories) {
+    if (c?.label) byLabel[c.label] = c.wps || [];
+  }
+  return scenarios
+    .map((s) => normalizeScenario({ ...s, category_wps: byLabel[s.category] || [] }))
+    .filter(Boolean);
+}
+
 async function loadStore() {
   const data = await readRaw();
   if (!data) return null;
@@ -64,12 +115,19 @@ async function loadStore() {
     const scenarios = parseScenarioList(data);
     if (!scenarios) return null;
     const labels = [...new Set(scenarios.map((s) => s.category))];
-    const categories = labels.map((label, i) => ({
-      slug: slugifyLabel(label),
-      label,
-      sort_order: i + 1,
-    }));
-    return { categories, scenarios: withCategoryWp(scenarios, categories) };
+    const categories = labels.map((label, i) =>
+      normalizeCategory({
+        slug: slugifyLabel(label),
+        label,
+        sort_order: i + 1,
+        wps: [],
+      })
+    );
+    return {
+      categories,
+      workPackages: [],
+      scenarios: withCategoryWps(scenarios, categories),
+    };
   }
 
   const scenarios = parseScenarioList(
@@ -83,28 +141,29 @@ async function loadStore() {
   if (!categories) {
     if (data.categories != null && !Array.isArray(data.categories)) return null;
     const labels = [...new Set(scenarios.map((s) => s.category))];
-    categories = labels.map((label, i) => ({
-      slug: slugifyLabel(label),
-      label,
-      sort_order: i + 1,
-    }));
+    categories = labels.map((label, i) =>
+      normalizeCategory({
+        slug: slugifyLabel(label),
+        label,
+        sort_order: i + 1,
+        wps: [],
+      })
+    );
   }
+
+  const workPackages = collectWorkPackages(
+    categories,
+    parseWorkPackageList(data.workPackages)
+  );
 
   return {
     categories,
-    scenarios: withCategoryWp(scenarios, categories),
+    workPackages,
+    scenarios: withCategoryWps(scenarios, categories),
   };
 }
 
-function withCategoryWp(scenarios, categories) {
-  const byLabel = Object.create(null);
-  for (const c of categories) {
-    if (c?.label) byLabel[c.label] = c.wp || "";
-  }
-  return scenarios.map((s) => normalizeScenario({ ...s, category_wp: byLabel[s.category] || "" })).filter(Boolean);
-}
-
-async function persistStore({ categories, scenarios }) {
+async function persistStore({ categories, workPackages, scenarios }) {
   if (!Array.isArray(categories) || !Array.isArray(scenarios)) {
     throw new Error("Invalid store data");
   }
@@ -112,16 +171,22 @@ async function persistStore({ categories, scenarios }) {
   if (normalizedCategories.length !== categories.length) {
     throw new Error("Invalid categories");
   }
-  const normalizedScenarios = withCategoryWp(scenarios, normalizedCategories);
+  const normalizedWps = collectWorkPackages(normalizedCategories, workPackages || []);
+  const normalizedScenarios = withCategoryWps(scenarios, normalizedCategories);
   if (normalizedScenarios.length !== scenarios.length) {
     throw new Error("Invalid scenarios");
   }
   await writeRaw({
     v: STORAGE_VERSION,
     categories: normalizedCategories,
+    workPackages: normalizedWps,
     scenarios: normalizedScenarios,
   });
-  return { categories: normalizedCategories, scenarios: normalizedScenarios };
+  return {
+    categories: normalizedCategories,
+    workPackages: normalizedWps,
+    scenarios: normalizedScenarios,
+  };
 }
 
 export async function readScenariosFromDisk() {
@@ -132,7 +197,11 @@ export async function readScenariosFromDisk() {
 export async function writeScenariosToDisk(scenarios) {
   const store = await loadStore();
   if (!store) throw new Error("Invalid scenarios file");
-  const result = await persistStore({ categories: store.categories, scenarios });
+  const result = await persistStore({
+    categories: store.categories,
+    workPackages: store.workPackages,
+    scenarios,
+  });
   return result.scenarios;
 }
 
@@ -144,8 +213,28 @@ export async function readCategoriesFromDisk() {
 export async function writeCategoriesToDisk(categories) {
   const store = await loadStore();
   if (!store) throw new Error("Invalid scenarios file");
-  const result = await persistStore({ categories, scenarios: store.scenarios });
+  const result = await persistStore({
+    categories,
+    workPackages: store.workPackages,
+    scenarios: store.scenarios,
+  });
   return result.categories;
+}
+
+export async function readWorkPackagesFromDisk() {
+  const store = await loadStore();
+  return store?.workPackages ?? null;
+}
+
+function resolveWpsAgainstStore(store, labelsOrSlugs) {
+  const wanted = sanitizeWpList(labelsOrSlugs);
+  const out = [];
+  for (const w of wanted) {
+    const found = store.workPackages.find((p) => p.label === w || p.slug === w);
+    if (!found) throw new Error(`Unknown WP: ${w}`);
+    out.push(found.label);
+  }
+  return out;
 }
 
 export async function insertCategoryOnDisk(payload) {
@@ -171,14 +260,18 @@ export async function insertCategoryOnDisk(payload) {
       ? Number(payload.sort_order)
       : store.categories.reduce((max, c) => Math.max(max, c.sort_order), 0) + 1;
 
-  const category = { slug, label, sort_order, wp: sanitizeWp(payload?.wp) };
-  await persistStore({
+  const wps = Object.prototype.hasOwnProperty.call(payload || {}, "wps")
+    ? resolveWpsAgainstStore(store, payload.wps)
+    : [];
+  const category = { slug, label, sort_order, wps };
+  const result = await persistStore({
     categories: [...store.categories, category].sort(
       (a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label)
     ),
+    workPackages: store.workPackages,
     scenarios: store.scenarios,
   });
-  return category;
+  return result.categories.find((c) => c.slug === slug) || category;
 }
 
 export async function updateCategoryOnDisk(slug, payload) {
@@ -201,10 +294,10 @@ export async function updateCategoryOnDisk(slug, payload) {
       ? Number(payload.sort_order)
       : current.sort_order;
 
-  const wp = Object.prototype.hasOwnProperty.call(payload || {}, "wp")
-    ? sanitizeWp(payload.wp)
-    : current.wp || "";
-  const updated = { ...current, label: nextLabel, sort_order, wp };
+  const wps = Object.prototype.hasOwnProperty.call(payload || {}, "wps")
+    ? resolveWpsAgainstStore(store, payload.wps)
+    : current.wps || [];
+  const updated = { ...current, label: nextLabel, sort_order, wps };
   const categories = store.categories.map((c) => (c.slug === slug ? updated : c));
 
   const scenarios =
@@ -214,8 +307,12 @@ export async function updateCategoryOnDisk(slug, payload) {
           s.category === current.label ? { ...s, category: nextLabel } : s
         );
 
-  await persistStore({ categories, scenarios });
-  return updated;
+  const result = await persistStore({
+    categories,
+    workPackages: store.workPackages,
+    scenarios,
+  });
+  return result.categories.find((c) => c.slug === slug) || updated;
 }
 
 export async function deleteCategoryOnDisk(slug) {
@@ -231,6 +328,87 @@ export async function deleteCategoryOnDisk(slug) {
 
   await persistStore({
     categories: store.categories.filter((c) => c.slug !== slug),
+    workPackages: store.workPackages,
+    scenarios: store.scenarios,
+  });
+  return { deleted: true };
+}
+
+export async function insertWorkPackageOnDisk(payload) {
+  const store = await loadStore();
+  if (!store) throw new Error("Read failed");
+  const label = String(payload?.label || "").trim().slice(0, 32);
+  if (!label) throw new Error("Label required");
+  if (store.workPackages.some((w) => w.label === label)) {
+    throw new Error("WP label already exists");
+  }
+  let slug =
+    typeof payload?.slug === "string" && payload.slug.trim()
+      ? slugifyLabel(payload.slug)
+      : slugifyLabel(label);
+  if (store.workPackages.some((w) => w.slug === slug)) {
+    slug = `${slug}_${Date.now().toString(36)}`;
+  }
+  const sort_order =
+    payload?.sort_order != null && Number.isFinite(Number(payload.sort_order))
+      ? Number(payload.sort_order)
+      : store.workPackages.reduce((max, w) => Math.max(max, w.sort_order), 0) + 1;
+  const wp = { slug, label, sort_order };
+  const result = await persistStore({
+    categories: store.categories,
+    workPackages: [...store.workPackages, wp].sort(
+      (a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label)
+    ),
+    scenarios: store.scenarios,
+  });
+  return result.workPackages.find((w) => w.slug === slug) || wp;
+}
+
+export async function updateWorkPackageOnDisk(slug, payload) {
+  const store = await loadStore();
+  if (!store) throw new Error("Read failed");
+  const current = store.workPackages.find((w) => w.slug === slug);
+  if (!current) return null;
+  const nextLabel =
+    typeof payload?.label === "string" && payload.label.trim()
+      ? payload.label.trim().slice(0, 32)
+      : current.label;
+  if (store.workPackages.some((w) => w.slug !== slug && w.label === nextLabel)) {
+    throw new Error("WP label already exists");
+  }
+  const sort_order =
+    payload?.sort_order != null && Number.isFinite(Number(payload.sort_order))
+      ? Number(payload.sort_order)
+      : current.sort_order;
+  const updated = { ...current, label: nextLabel, sort_order };
+  const workPackages = store.workPackages.map((w) => (w.slug === slug ? updated : w));
+  const categories =
+    nextLabel === current.label
+      ? store.categories
+      : store.categories.map((c) => ({
+          ...c,
+          wps: (c.wps || []).map((l) => (l === current.label ? nextLabel : l)),
+        }));
+  const result = await persistStore({
+    categories,
+    workPackages,
+    scenarios: store.scenarios,
+  });
+  return result.workPackages.find((w) => w.slug === slug) || updated;
+}
+
+export async function deleteWorkPackageOnDisk(slug) {
+  const store = await loadStore();
+  if (!store) throw new Error("Read failed");
+  const wp = store.workPackages.find((w) => w.slug === slug);
+  if (!wp) return { deleted: false, reason: "not_found" };
+  const count = store.categories.filter((c) => (c.wps || []).includes(wp.label)).length;
+  if (count > 0) {
+    return { deleted: false, reason: "in_use", count };
+  }
+  await persistStore({
+    categories: store.categories,
+    workPackages: store.workPackages.filter((w) => w.slug !== slug),
     scenarios: store.scenarios,
   });
   return { deleted: true };

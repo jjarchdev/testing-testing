@@ -26,6 +26,7 @@ function scenarioMatchesQuery(scenario, rawQuery, extraParts = []) {
     scenario.title,
     scenario.category,
     scenario.category_wp,
+    ...(Array.isArray(scenario.category_wps) ? scenario.category_wps : []),
     scenario.scenario,
     scenario.solution,
     scenario.verdict,
@@ -233,8 +234,14 @@ function scenarioImageUrls(scenario) {
   return [];
 }
 
-function wpFor(scenario, wpByLabel) {
-  return String(scenario?.category_wp || wpByLabel?.[scenario?.category] || "").trim();
+function categoryWps(scenario, wpsByLabel) {
+  if (Array.isArray(scenario?.category_wps) && scenario.category_wps.length) {
+    return scenario.category_wps.map((w) => String(w).trim()).filter(Boolean);
+  }
+  const fromCat = wpsByLabel?.[scenario?.category];
+  if (Array.isArray(fromCat) && fromCat.length) return fromCat;
+  const one = String(scenario?.category_wp || "").trim();
+  return one ? one.split(/,\s*/).filter(Boolean) : [];
 }
 
 function ScenarioCard({ scenario, view, onSelect, openLabel, categoryWp }) {
@@ -625,25 +632,30 @@ export default function EmployeeView() {
   );
   const categoryLabels = useMemo(() => (categories || []).map((c) => c.label), [categories]);
   const allCategories = useMemo(() => [ALL_FILTER, ...categoryLabels], [categoryLabels]);
-  const wpByLabel = useMemo(() => {
+  const wpsByLabel = useMemo(() => {
     const m = Object.create(null);
     for (const c of categories || []) {
-      m[c.label] = String(c.wp || "").trim();
+      m[c.label] = Array.isArray(c.wps) ? c.wps : c.wp ? [c.wp] : [];
     }
     return m;
   }, [categories]);
   const wpValues = useMemo(() => {
     const set = new Set();
     for (const c of categories || []) {
-      const w = String(c.wp || "").trim();
-      if (w) set.add(w);
+      const list = Array.isArray(c.wps) ? c.wps : c.wp ? [c.wp] : [];
+      for (const w of list) {
+        const label = String(w || "").trim();
+        if (label) set.add(label);
+      }
     }
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [categories]);
   const categoryCounts = useMemo(() => {
-    const forWp = classifiedList.filter((s) => !filterWp || wpFor(s, wpByLabel) === filterWp);
+    const forWp = classifiedList.filter(
+      (s) => !filterWp || categoryWps(s, wpsByLabel).includes(filterWp)
+    );
     return buildCategoryCounts(forWp);
-  }, [classifiedList, filterWp, wpByLabel]);
+  }, [classifiedList, filterWp, wpsByLabel]);
 
   const selectedScenario = useMemo(() => {
     if (scenarioId == null || scenarioId === "") return null;
@@ -656,10 +668,10 @@ export default function EmployeeView() {
     () =>
       classifiedList.filter((s) => {
         const matchesCat = filterCategory === ALL_FILTER || s.category === filterCategory;
-        const matchesWp = !filterWp || wpFor(s, wpByLabel) === filterWp;
+        const matchesWp = !filterWp || categoryWps(s, wpsByLabel).includes(filterWp);
         return matchesCat && matchesWp;
       }),
-    [classifiedList, filterCategory, filterWp, wpByLabel]
+    [classifiedList, filterCategory, filterWp, wpsByLabel]
   );
 
   const verdictCounts = useMemo(() => {
@@ -678,16 +690,16 @@ export default function EmployeeView() {
   const filteredScenarios = useMemo(() => {
     return classifiedList.filter((s) => {
       const matchesCat = filterCategory === ALL_FILTER || s.category === filterCategory;
-      const matchesWp = !filterWp || wpFor(s, wpByLabel) === filterWp;
+      const matchesWp = !filterWp || categoryWps(s, wpsByLabel).includes(filterWp);
       if (!matchesCat || !matchesWp) return false;
       if (searching) {
         const verdictLabel = VERDICT_CODES.includes(s.verdict) ? t(`verdict.${s.verdict}`) : "";
-        return scenarioMatchesQuery(s, searchQuery, [verdictLabel, wpFor(s, wpByLabel)]);
+        return scenarioMatchesQuery(s, searchQuery, [verdictLabel, ...categoryWps(s, wpsByLabel)]);
       }
       if (filterVerdict && s.verdict !== filterVerdict) return false;
       return true;
     });
-  }, [classifiedList, searchQuery, filterCategory, filterWp, filterVerdict, searching, t, wpByLabel]);
+  }, [classifiedList, searchQuery, filterCategory, filterWp, filterVerdict, searching, t, wpsByLabel]);
 
   const recentScenarios = useMemo(() => {
     const byId = new Map(classifiedList.map((s) => [s.id, s]));
@@ -971,9 +983,9 @@ export default function EmployeeView() {
               ) : (
                 <span style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1, marginRight: 8 }}>
                   <span>{cat}</span>
-                  {wpByLabel[cat] ? (
+                  {wpsByLabel[cat]?.length ? (
                     <span style={{ fontSize: "0.72rem", color: "#8899aa", fontWeight: 600 }}>
-                      {wpByLabel[cat]}
+                      {wpsByLabel[cat].join(", ")}
                     </span>
                   ) : null}
                 </span>
@@ -1019,7 +1031,7 @@ export default function EmployeeView() {
                     ? t(`verdict.${filterVerdict}`)
                     : filterCategory === ALL_FILTER
                       ? t("employee.chooseVerdict")
-                      : formatCategoryLabel(filterCategory, wpByLabel[filterCategory])}
+                      : formatCategoryLabel(filterCategory, wpsByLabel[filterCategory])}
             </span>
           </div>
         ) : null}
@@ -1036,7 +1048,7 @@ export default function EmployeeView() {
           <ScenarioDetail
             scenario={selectedScenario}
             view={viewFor(selectedScenario)}
-            categoryWp={wpFor(selectedScenario, wpByLabel)}
+            categoryWp={categoryWps(selectedScenario, wpsByLabel)}
             onBack={closeDetail}
             onNotify={notify}
           />
@@ -1046,7 +1058,7 @@ export default function EmployeeView() {
               <h2 style={styles.mainTitle}>
                 {filterCategory === ALL_FILTER
                   ? t("employee.chooseVerdict")
-                  : formatCategoryLabel(filterCategory, wpByLabel[filterCategory])}
+                  : formatCategoryLabel(filterCategory, wpsByLabel[filterCategory])}
               </h2>
               <span style={styles.mainCount}>
                 {t("employee.proceduresCount", { count: inCategory.length })}
@@ -1103,7 +1115,7 @@ export default function EmployeeView() {
                   {searching
                     ? filterCategory === ALL_FILTER
                       ? t("employee.allScenarios")
-                      : formatCategoryLabel(filterCategory, wpByLabel[filterCategory])
+                      : formatCategoryLabel(filterCategory, wpsByLabel[filterCategory])
                     : t(`verdict.${filterVerdict}`)}
                 </h2>
               </div>
@@ -1122,7 +1134,7 @@ export default function EmployeeView() {
                     key={s.id}
                     scenario={s}
                     view={viewFor(s)}
-                    categoryWp={wpFor(s, wpByLabel)}
+                    categoryWp={categoryWps(s, wpsByLabel)}
                     openLabel={t("employee.open")}
                     onSelect={() => openScenario(s)}
                   />

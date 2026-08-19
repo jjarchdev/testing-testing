@@ -25,6 +25,10 @@ const {
   insertCategory,
   updateCategory,
   deleteCategory,
+  listWorkPackages,
+  insertWorkPackage,
+  updateWorkPackage,
+  deleteWorkPackage,
   isConfluencePagePublic,
   checkImageUrlsReady,
 } = await import("./db.js");
@@ -35,6 +39,10 @@ const {
   insertCategoryOnDisk,
   updateCategoryOnDisk,
   deleteCategoryOnDisk,
+  readWorkPackagesFromDisk,
+  insertWorkPackageOnDisk,
+  updateWorkPackageOnDisk,
+  deleteWorkPackageOnDisk,
   resolveCategoryLabelOnDisk,
   withPublishedDefault,
 } = await import("./fileStore.js");
@@ -50,7 +58,7 @@ const {
   parseVerdict,
   coerceSolutionAsChecklist,
 } = await import("../shared/scenarioSchema.mjs");
-const { normalizeCategory, sanitizeWp } = await import("../shared/categoryMap.mjs");
+const { normalizeCategory, normalizeWorkPackage, sanitizeWp, sanitizeWpList } = await import("../shared/categoryMap.mjs");
 const {
   saveUploadedImage,
   UPLOADS_DIR,
@@ -319,8 +327,19 @@ function parseCategoryBody(body) {
       ? Number(body.sort_order)
       : undefined;
   const slug = typeof body?.slug === "string" ? body.slug.trim() : undefined;
-  const wp = sanitizeWp(body?.wp);
-  return { label, sort_order, slug, wp };
+  const wps = Array.isArray(body?.wps) ? sanitizeWpList(body.wps) : undefined;
+  return { label, sort_order, slug, wps };
+}
+
+function parseWorkPackageBody(body) {
+  const label = typeof body?.label === "string" ? sanitizeWp(body.label) : "";
+  if (!label) return null;
+  const sort_order =
+    body?.sort_order != null && Number.isFinite(Number(body.sort_order))
+      ? Number(body.sort_order)
+      : undefined;
+  const slug = typeof body?.slug === "string" ? body.slug.trim() : undefined;
+  return { label, sort_order, slug };
 }
 
 const loginAttempts = new Map();
@@ -555,13 +574,12 @@ app.put("/api/categories/:slug", requireAuth, async (req, res) => {
       req.body?.sort_order != null && Number.isFinite(Number(req.body.sort_order))
         ? Number(req.body.sort_order)
         : undefined;
-    const hasWp = Object.prototype.hasOwnProperty.call(req.body || {}, "wp");
-    const wp = hasWp ? sanitizeWp(req.body.wp) : undefined;
-    if (label === undefined && sort_order === undefined && !hasWp) {
+    const hasWps = Array.isArray(req.body?.wps);
+    if (label === undefined && sort_order === undefined && !hasWps) {
       return res.status(400).json({ error: "Nothing to update" });
     }
     const payload = { label, sort_order };
-    if (hasWp) payload.wp = wp;
+    if (hasWps) payload.wps = sanitizeWpList(req.body.wps);
     const category = isSupabaseConfigured()
       ? await updateCategory(slug, payload)
       : await updateCategoryOnDisk(slug, payload);
@@ -595,6 +613,94 @@ app.delete("/api/categories/:slug", requireAuth, async (req, res) => {
     res.status(204).send();
   } catch (e) {
     console.error("[handler] delete:", e?.message || e);
+    res.status(400).json({ error: e.message || "Delete failed" });
+  }
+});
+
+app.get("/api/work-packages", async (req, res) => {
+  if (requireSupabaseInProd(res)) return;
+  try {
+    const workPackages = isSupabaseConfigured()
+      ? await listWorkPackages()
+      : await readWorkPackagesFromDisk();
+    if (!workPackages) {
+      return res.status(500).json({ error: "Read failed" });
+    }
+    res.json({ workPackages });
+  } catch (e) {
+    console.error("[work-packages:list]", e?.message || e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.post("/api/work-packages", requireAuth, async (req, res) => {
+  if (requireSupabaseInProd(res)) return;
+  try {
+    const payload = parseWorkPackageBody(req.body);
+    if (!payload) {
+      return res.status(400).json({ error: "Invalid work package" });
+    }
+    const workPackage = isSupabaseConfigured()
+      ? await insertWorkPackage(payload)
+      : await insertWorkPackageOnDisk(payload);
+    res.status(201).json({ workPackage: normalizeWorkPackage(workPackage) });
+  } catch (e) {
+    console.error("[work-packages:create]", e?.message || e);
+    res.status(400).json({ error: e.message || "Create failed" });
+  }
+});
+
+app.put("/api/work-packages/:slug", requireAuth, async (req, res) => {
+  if (requireSupabaseInProd(res)) return;
+  const slug = String(req.params.slug || "").trim();
+  if (!slug) {
+    return res.status(400).json({ error: "Invalid slug" });
+  }
+  try {
+    const label =
+      typeof req.body?.label === "string" && sanitizeWp(req.body.label)
+        ? sanitizeWp(req.body.label)
+        : undefined;
+    const sort_order =
+      req.body?.sort_order != null && Number.isFinite(Number(req.body.sort_order))
+        ? Number(req.body.sort_order)
+        : undefined;
+    if (label === undefined && sort_order === undefined) {
+      return res.status(400).json({ error: "Nothing to update" });
+    }
+    const workPackage = isSupabaseConfigured()
+      ? await updateWorkPackage(slug, { label, sort_order })
+      : await updateWorkPackageOnDisk(slug, { label, sort_order });
+    if (!workPackage) return res.status(404).json({ error: "Not found" });
+    res.json({ workPackage: normalizeWorkPackage(workPackage) });
+  } catch (e) {
+    console.error("[work-packages:update]", e?.message || e);
+    res.status(400).json({ error: e.message || "Update failed" });
+  }
+});
+
+app.delete("/api/work-packages/:slug", requireAuth, async (req, res) => {
+  if (requireSupabaseInProd(res)) return;
+  const slug = String(req.params.slug || "").trim();
+  if (!slug) {
+    return res.status(400).json({ error: "Invalid slug" });
+  }
+  try {
+    const result = isSupabaseConfigured()
+      ? await deleteWorkPackage(slug)
+      : await deleteWorkPackageOnDisk(slug);
+    if (result.reason === "not_found") {
+      return res.status(404).json({ error: "Not found" });
+    }
+    if (result.reason === "in_use") {
+      return res.status(409).json({
+        error: `WP is used by ${result.count} categor${result.count === 1 ? "y" : "ies"}`,
+        count: result.count,
+      });
+    }
+    res.status(204).send();
+  } catch (e) {
+    console.error("[work-packages:delete]", e?.message || e);
     res.status(400).json({ error: e.message || "Delete failed" });
   }
 });
@@ -868,8 +974,9 @@ app.delete("/api/admin/admins/:email", requireAuth, async (req, res) => {
 app.get("/api/admin/export", requireAuth, async (_req, res) => {
   if (requireSupabaseInProd(res)) return;
   try {
-    const [categories, scenarios] = await Promise.all([
+    const [categories, workPackages, scenarios] = await Promise.all([
       isSupabaseConfigured() ? listCategories() : readCategoriesFromDisk(),
+      isSupabaseConfigured() ? listWorkPackages() : readWorkPackagesFromDisk(),
       isSupabaseConfigured() ? listAllScenarios() : readScenariosFromDisk(),
     ]);
     let confluence = { connected: false };
@@ -889,6 +996,7 @@ app.get("/api/admin/export", requireAuth, async (_req, res) => {
       app: "qm-playbook",
       storage: storageMode(),
       categories: categories || [],
+      workPackages: workPackages || [],
       scenarios: scenarios || [],
       confluence,
     };

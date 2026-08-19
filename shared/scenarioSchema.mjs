@@ -1,3 +1,5 @@
+import { sanitizeWpList } from "./categoryMap.mjs";
+
 export const MAX_SCENARIO_IMAGES = 8;
 export const SUPPORTED_SCENARIO_LOCALES = ["en", "de", "sq"];
 export const VERDICT_CODES = ["to_be_rejected", "acceptable", "grey_area"];
@@ -211,8 +213,9 @@ export function normalizeScenario(s, options = {}) {
     solution_as_checklist: coerceSolutionAsChecklist(s.solution_as_checklist),
     acceptance_as_checklist: coerceSolutionAsChecklist(s.acceptance_as_checklist),
     verdict: parseVerdict(s.verdict) || null,
-    category_wp: typeof s.category_wp === "string" ? s.category_wp.trim().slice(0, 32) : "",
+    category_wps: sanitizeWpList(s.category_wps ?? s.category_wp),
   };
+  out.category_wp = out.category_wps.join(", ");
   if (typeof s.is_published === "boolean") {
     out.is_published = s.is_published;
   } else if (s.is_published === 0 || s.is_published === 1) {

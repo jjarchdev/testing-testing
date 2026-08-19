@@ -16,8 +16,9 @@ Follow these steps in order. The browser never talks to Supabase directly — on
 4b. For multiple images per scenario, run [`supabase/migrations/004_scenario_images.sql`](supabase/migrations/004_scenario_images.sql)
 4c. For per-language scenario text (required by the current admin UI), run [`supabase/migrations/005_scenario_translations.sql`](supabase/migrations/005_scenario_translations.sql)
 4d. For procedure checklist mode and verdicts, run [`supabase/migrations/006_solution_mode_and_verdict.sql`](supabase/migrations/006_solution_mode_and_verdict.sql)
-4e. For acceptance criteria and category WP (required by the current admin and reader UI), run [`supabase/migrations/007_acceptance_and_wp.sql`](supabase/migrations/007_acceptance_and_wp.sql). Local `npm run dev` with the file store does **not** need these SQL files.
-5. Confirm tables/columns exist under **Table Editor**: `categories` (including `wp`), `scenarios` (with `image_urls`, `translations`, `verdict`, `acceptance_as_checklist`), and (for Manage Admins) `app_admins`
+4e. For acceptance criteria and category WP (required by the current admin and reader UI), run [`supabase/migrations/007_acceptance_and_wp.sql`](supabase/migrations/007_acceptance_and_wp.sql)
+4f. For independent work packages (Manage WPs; a category can have several), run [`supabase/migrations/008_work_packages.sql`](supabase/migrations/008_work_packages.sql). Local `npm run dev` with the file store does **not** need these SQL files.
+5. Confirm tables/columns exist under **Table Editor**: `categories`, `work_packages`, `category_work_packages`, `scenarios` (with `image_urls`, `translations`, `verdict`, `acceptance_as_checklist`), and (for Manage Admins) `app_admins`
 6. **Storage** (for admin image uploads): create a **public** bucket named `scenario-images` (see [`supabase/STORAGE.md`](supabase/STORAGE.md)). The server also tries to create this bucket on first upload when `SUPABASE_SECRET_KEY` is set.
 7. **Project Settings → API**:
    - Copy **Project URL** → use as `SUPABASE_URL`
@@ -38,6 +39,8 @@ grant usage, select on all sequences in schema public to service_role;
 grant select on public.scenarios_employee to anon, authenticated, service_role;
 grant select on public.scenarios_admin to service_role;
 grant all on table public.app_admins to service_role;
+grant all on table public.work_packages to service_role;
+grant all on table public.category_work_packages to service_role;
 ```
 
 ### Clear old sample data (only if you ran an older seeded migration)

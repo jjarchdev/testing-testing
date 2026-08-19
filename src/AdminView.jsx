@@ -85,10 +85,10 @@ function sameUrlList(a, b) {
   return a.every((url, i) => url === b[i]);
 }
 
-function CategoryManager({ categories, onSave, onDelete, onBack }) {
+function CategoryManager({ categories, workPackages, onSave, onDelete, onBack, onManageWps }) {
   const { t } = useTranslation();
   const [label, setLabel] = useState("");
-  const [wp, setWp] = useState("");
+  const [selectedWps, setSelectedWps] = useState([]);
   const [sortOrder, setSortOrder] = useState("");
   const [editingSlug, setEditingSlug] = useState(null);
   const [formError, setFormError] = useState("");
@@ -103,7 +103,7 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
 
   const resetForm = () => {
     setLabel("");
-    setWp("");
+    setSelectedWps([]);
     setSortOrder("");
     setEditingSlug(null);
     setFormError("");
@@ -112,7 +112,7 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
   const startEdit = (cat) => {
     setEditingSlug(cat.slug);
     setLabel(cat.label);
-    setWp(cat.wp || "");
+    setSelectedWps(Array.isArray(cat.wps) ? [...cat.wps] : cat.wp ? [cat.wp] : []);
     setSortOrder(String(cat.sort_order));
     setFormError("");
     setDeleteSlug(null);
@@ -137,7 +137,7 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
       setFormError(t("categories.labelRequired"));
       return;
     }
-    const payload = { label: label.trim(), wp: wp.trim() };
+    const payload = { label: label.trim(), wps: selectedWps };
     if (sortOrder.trim() !== "" && Number.isFinite(Number(sortOrder))) {
       payload.sort_order = Number(sortOrder);
     }
@@ -185,18 +185,39 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
             setLabel(e.target.value);
           }}
         />
-        <label style={styles.label}>{t("categories.wp")}</label>
-        <input
-          style={styles.input}
-          placeholder={t("categories.wpPlaceholder")}
-          value={wp}
-          maxLength={32}
-          disabled={busy}
-          onChange={(e) => {
-            setFormError("");
-            setWp(e.target.value);
-          }}
-        />
+        <label style={styles.label}>{t("categories.wps")}</label>
+        {(workPackages || []).length === 0 ? (
+          <p style={{ color: "#8899aa", fontSize: "0.85rem", marginTop: 0 }}>
+            {t("categories.wpsEmpty")}{" "}
+            <button type="button" style={{ ...styles.ghostBtn, padding: "0.25rem 0.6rem" }} onClick={onManageWps}>
+              {t("admin.manageWps")}
+            </button>
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem", marginBottom: "0.5rem" }}>
+            {(workPackages || []).map((wp) => {
+              const checked = selectedWps.includes(wp.label);
+              return (
+                <label
+                  key={wp.slug}
+                  style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.9rem", cursor: "pointer" }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={busy}
+                    onChange={() => {
+                      setSelectedWps((prev) =>
+                        checked ? prev.filter((l) => l !== wp.label) : [...prev, wp.label]
+                      );
+                    }}
+                  />
+                  {wp.label}
+                </label>
+              );
+            })}
+          </div>
+        )}
         <label style={styles.label}>{t("categories.sortOrder")}</label>
         <input
           style={styles.input}
@@ -230,7 +251,7 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
         <div style={{ ...styles.adminTable, marginTop: "2rem" }}>
           <div style={styles.tableHead}>
             <span style={{ flex: 2 }}>{t("categories.colLabel")}</span>
-            <span style={{ width: 90 }}>{t("categories.colWp")}</span>
+            <span style={{ flex: 1.2 }}>{t("categories.colWp")}</span>
             <span style={{ flex: 1 }}>{t("categories.colSlug")}</span>
             <span style={{ width: 70 }}>{t("categories.colOrder")}</span>
             <span style={{ flex: 1, textAlign: "right" }}>{t("categories.colActions")}</span>
@@ -268,7 +289,9 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
               ) : (
                 <>
                   <span style={{ flex: 2, fontWeight: 600 }}>{cat.label}</span>
-                  <span style={{ width: 90, color: "#8899aa", fontSize: "0.85rem" }}>{cat.wp || "—"}</span>
+                  <span style={{ flex: 1.2, color: "#8899aa", fontSize: "0.85rem" }}>
+                    {(Array.isArray(cat.wps) && cat.wps.length ? cat.wps.join(", ") : null) || "—"}
+                  </span>
                   <span style={{ flex: 1, color: "#8899aa", fontSize: "0.85rem" }}>{cat.slug}</span>
                   <span style={{ width: 70, color: "#8899aa" }}>{cat.sort_order}</span>
                   <div style={{ flex: 1, display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
@@ -293,8 +316,201 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
   );
 }
 
+function WorkPackageManager({ workPackages, onSave, onDelete, onBack }) {
+  const { t } = useTranslation();
+  const [label, setLabel] = useState("");
+  const [sortOrder, setSortOrder] = useState("");
+  const [editingSlug, setEditingSlug] = useState(null);
+  const [formError, setFormError] = useState("");
+  const [deleteSlug, setDeleteSlug] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const formRef = useRef(null);
+
+  const editingLabel = useMemo(() => {
+    if (!editingSlug) return "";
+    return workPackages.find((w) => w.slug === editingSlug)?.label || label;
+  }, [workPackages, editingSlug, label]);
+
+  const resetForm = () => {
+    setLabel("");
+    setSortOrder("");
+    setEditingSlug(null);
+    setFormError("");
+  };
+
+  const startEdit = (wp) => {
+    setEditingSlug(wp.slug);
+    setLabel(wp.label);
+    setSortOrder(String(wp.sort_order));
+    setFormError("");
+    setDeleteSlug(null);
+    requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (editingSlug) resetForm();
+      else onBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editingSlug, onBack]);
+
+  const handleSave = async () => {
+    if (busy) return;
+    if (!label.trim()) {
+      setFormError(t("workPackages.labelRequired"));
+      return;
+    }
+    const payload = { label: label.trim() };
+    if (sortOrder.trim() !== "" && Number.isFinite(Number(sortOrder))) {
+      payload.sort_order = Number(sortOrder);
+    }
+    setBusy(true);
+    try {
+      const ok = await onSave(payload, editingSlug);
+      if (ok) resetForm();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={styles.formWrap}>
+      <button type="button" style={styles.detailBack} onClick={onBack}>
+        {t("workPackages.back")}
+      </button>
+      <h2 style={styles.formTitle}>{t("workPackages.title")}</h2>
+      <p style={{ color: "#8899aa", marginTop: 0, marginBottom: "1.5rem", fontSize: "0.9rem" }}>
+        {t("workPackages.help")}
+      </p>
+
+      <div ref={formRef}>
+        <h3 style={{ ...styles.formTitle, fontSize: "1.1rem", marginTop: 0, marginBottom: "0.5rem" }}>
+          {editingSlug ? t("workPackages.editTitle") : t("workPackages.addTitle")}
+        </h3>
+        {editingSlug ? (
+          <p style={{ color: "#4fa3ff", marginTop: 0, marginBottom: "1rem", fontSize: "0.9rem" }}>
+            {t("workPackages.editing", { label: editingLabel })}
+          </p>
+        ) : null}
+        {formError ? (
+          <div style={styles.formInlineError} role="alert">
+            {formError}
+          </div>
+        ) : null}
+        <label style={styles.label}>{t("workPackages.label")}</label>
+        <input
+          style={styles.input}
+          placeholder={t("workPackages.labelPlaceholder")}
+          value={label}
+          maxLength={32}
+          disabled={busy}
+          onChange={(e) => {
+            setFormError("");
+            setLabel(e.target.value);
+          }}
+        />
+        <label style={styles.label}>{t("workPackages.sortOrder")}</label>
+        <input
+          style={styles.input}
+          type="number"
+          placeholder="0"
+          value={sortOrder}
+          disabled={busy}
+          onChange={(e) => setSortOrder(e.target.value)}
+        />
+        <div style={styles.formActions}>
+          <button type="button" style={styles.primaryBtn} onClick={handleSave} disabled={busy}>
+            {busy
+              ? t("workPackages.saving")
+              : editingSlug
+                ? t("workPackages.save")
+                : t("workPackages.add")}
+          </button>
+          {editingSlug ? (
+            <button type="button" style={styles.ghostBtn} onClick={resetForm} disabled={busy}>
+              {t("workPackages.cancelEdit")}
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {workPackages.length === 0 ? (
+        <div style={{ ...styles.empty, marginTop: "1.5rem", marginBottom: 0 }}>
+          {t("workPackages.empty")}
+        </div>
+      ) : (
+        <div style={{ ...styles.adminTable, marginTop: "2rem" }}>
+          <div style={styles.tableHead}>
+            <span style={{ flex: 2 }}>{t("workPackages.colLabel")}</span>
+            <span style={{ flex: 1 }}>{t("workPackages.colSlug")}</span>
+            <span style={{ width: 70 }}>{t("workPackages.colOrder")}</span>
+            <span style={{ flex: 1, textAlign: "right" }}>{t("workPackages.colActions")}</span>
+          </div>
+          {workPackages.map((wp) => (
+            <div key={wp.slug} style={styles.tableRow}>
+              {deleteSlug === wp.slug ? (
+                <div style={styles.deleteConfirm}>
+                  <span>{t("workPackages.deleteConfirm", { label: wp.label })}</span>
+                  <button
+                    type="button"
+                    style={styles.dangerBtn}
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        const ok = await onDelete(wp.slug);
+                        if (ok) setDeleteSlug(null);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    {busy ? t("workPackages.deleting") : t("workPackages.yesDelete")}
+                  </button>
+                  <button
+                    type="button"
+                    style={styles.cancelBtn}
+                    disabled={busy}
+                    onClick={() => setDeleteSlug(null)}
+                  >
+                    {t("workPackages.cancel")}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <span style={{ flex: 2, fontWeight: 600 }}>{wp.label}</span>
+                  <span style={{ flex: 1, color: "#8899aa", fontSize: "0.85rem" }}>{wp.slug}</span>
+                  <span style={{ width: 70, color: "#8899aa" }}>{wp.sort_order}</span>
+                  <div style={{ flex: 1, display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+                    <button type="button" style={styles.editBtn} onClick={() => startEdit(wp)}>
+                      {t("admin.edit")}
+                    </button>
+                    <button
+                      type="button"
+                      style={styles.dangerBtn}
+                      onClick={() => setDeleteSlug(wp.slug)}
+                    >
+                      {t("admin.delete")}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScenarioForm({ initial, categories, onSave, onCancel }) {
   const { t, i18n } = useTranslation();
+  const narrow = useIsNarrow();
   const defaultCategory = categories[0]?.label || "";
   const baseline = useMemo(
     () => ({
@@ -330,6 +546,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
   const [uploading, setUploading] = useState(false);
   const imageUrlsRef = useRef(baseline.image_urls);
   imageUrlsRef.current = form.image_urls;
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     setForm(baseline);
@@ -575,7 +792,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
   const LANG_LABELS = { en: "English", de: "Deutsch", sq: "Shqip" };
 
   return (
-    <div style={styles.formWrap}>
+    <div style={{ ...styles.formWrap, maxWidth: narrow ? 680 : 1100 }}>
       <h2 style={styles.formTitle}>
         {initial ? t("scenarioForm.editTitle") : t("scenarioForm.addTitle")}
       </h2>
@@ -598,7 +815,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         ) : (
           categories.map((c) => (
             <option key={c.slug} value={c.label}>
-              {formatCategoryLabel(c.label, c.wp)}
+              {formatCategoryLabel(c.label, c.wps)}
             </option>
           ))
         )}
@@ -695,6 +912,15 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         onChange={(e) => patchLang(activeLang, "scenario", e.target.value)}
       />
 
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: narrow ? "1fr" : "1fr 1fr",
+          gap: "0 1.25rem",
+          alignItems: "start",
+        }}
+      >
+        <div>
       <label style={styles.label}>
         {t("scenarioForm.solution")} ({LANG_LABELS[activeLang]})
       </label>
@@ -744,7 +970,8 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           ? t("scenarioForm.solutionHelpChecklist")
           : t("scenarioForm.solutionHelp")}
       </p>
-
+        </div>
+        <div>
       <label style={styles.label}>
         {t("scenarioForm.acceptance")} ({LANG_LABELS[activeLang]})
       </label>
@@ -779,7 +1006,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         })}
       </div>
       <textarea
-        style={{ ...styles.input, height: 140 }}
+        style={{ ...styles.input, height: 200 }}
         placeholder={
           form.acceptance_as_checklist
             ? t("scenarioForm.acceptancePlaceholderChecklist")
@@ -794,6 +1021,8 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           ? t("scenarioForm.acceptanceHelpChecklist")
           : t("scenarioForm.acceptanceHelp")}
       </p>
+        </div>
+      </div>
 
       <label style={styles.label}>
         {t("scenarioForm.tags")} ({LANG_LABELS[activeLang]})
@@ -830,38 +1059,54 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           {t("scenarioForm.addImageUrl")}
         </button>
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.5rem", alignItems: "center" }}>
-        <label
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.5rem",
+          marginTop: "0.5rem",
+          alignItems: "center",
+          position: "relative",
+        }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
+          multiple
+          disabled={busy || uploading || atImageCap}
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={async (e) => {
+            const list = e.target.files;
+            e.target.value = "";
+            await handleUploadFiles(list);
+          }}
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            padding: 0,
+            margin: -1,
+            overflow: "hidden",
+            clip: "rect(0, 0, 0, 0)",
+            whiteSpace: "nowrap",
+            border: 0,
+            opacity: 0,
+          }}
+        />
+        <button
+          type="button"
           style={{
             ...styles.ghostBtn,
-            position: "relative",
-            overflow: "hidden",
             cursor: busy || uploading || atImageCap ? "default" : "pointer",
             opacity: atImageCap ? 0.55 : 1,
           }}
+          disabled={busy || uploading || atImageCap}
+          onClick={() => fileInputRef.current?.click()}
         >
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
-            multiple
-            disabled={busy || uploading || atImageCap}
-            onChange={async (e) => {
-              const list = e.target.files;
-              e.target.value = "";
-              await handleUploadFiles(list);
-            }}
-            style={{
-              position: "absolute",
-              inset: 0,
-              opacity: 0,
-              width: "100%",
-              height: "100%",
-              cursor: busy || uploading || atImageCap ? "default" : "pointer",
-              fontSize: 0,
-            }}
-          />
           {uploading ? t("scenarioForm.uploading") : t("scenarioForm.uploadImages")}
-        </label>
+        </button>
         <span style={{ color: "#8899aa", fontSize: "0.85rem" }}>
           {t("scenarioForm.imageCount", {
             count: form.image_urls.length,
@@ -1037,6 +1282,7 @@ export default function AdminView() {
     scenarios,
     setScenarios,
     categories,
+    workPackages,
     adminSession,
     setAdminSession,
     adminEmail,
@@ -1044,11 +1290,13 @@ export default function AdminView() {
     notify,
     loadScenariosFromServer,
     loadCategoriesFromServer,
+    loadWorkPackagesFromServer,
   } = useAppData();
 
   const [editingScenario, setEditingScenario] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [showWorkPackageManager, setShowWorkPackageManager] = useState(false);
   const [showConfluenceManager, setShowConfluenceManager] = useState(false);
   const [showAdminsPanel, setShowAdminsPanel] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -1057,7 +1305,8 @@ export default function AdminView() {
 
   const scenarioList = scenarios ?? [];
   const categoryList = categories || [];
-  const listLoading = scenarios === null || categories === null;
+  const workPackageList = workPackages || [];
+  const listLoading = scenarios === null || categories === null || workPackages === null;
   const distinctCategoryCount = categoryList.length;
 
   useEffect(() => {
@@ -1067,7 +1316,7 @@ export default function AdminView() {
   useEffect(() => {
     const main = document.getElementById("admin-main");
     if (main) main.scrollTop = 0;
-  }, [showAddForm, showCategoryManager, showConfluenceManager, showAdminsPanel, editingScenario, listLoading]);
+  }, [showAddForm, showCategoryManager, showWorkPackageManager, showConfluenceManager, showAdminsPanel, editingScenario, listLoading]);
 
   useEffect(() => {
     if (scenarios == null) return;
@@ -1176,7 +1425,7 @@ export default function AdminView() {
         notify(err?.error || t("toast.categorySaveFailed"), "error");
         return false;
       }
-      await Promise.all([loadCategoriesFromServer(), loadScenariosFromServer()]);
+      await Promise.all([loadCategoriesFromServer(), loadScenariosFromServer(), loadWorkPackagesFromServer()]);
       notify(editingSlug ? t("toast.categoryUpdated") : t("toast.categoryAdded"));
       return true;
     } catch {
@@ -1218,6 +1467,69 @@ export default function AdminView() {
     }
   };
 
+  const saveWorkPackage = async (data, editingSlug = null) => {
+    if (!adminSession) {
+      notify(t("toast.notSignedIn"), "error");
+      return false;
+    }
+    try {
+      const res = editingSlug
+        ? await apiFetchWithAuth(`/api/work-packages/${encodeURIComponent(editingSlug)}`, {
+            method: "PUT",
+            body: JSON.stringify(data),
+          })
+        : await apiFetchWithAuth("/api/work-packages", {
+            method: "POST",
+            body: JSON.stringify(data),
+          });
+      if (handleAuthFailure(res)) return false;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        notify(err?.error || t("toast.wpSaveFailed"), "error");
+        return false;
+      }
+      await Promise.all([loadWorkPackagesFromServer(), loadCategoriesFromServer(), loadScenariosFromServer()]);
+      notify(editingSlug ? t("toast.wpUpdated") : t("toast.wpAdded"));
+      return true;
+    } catch {
+      notify(t("toast.unreachable"), "error");
+      return false;
+    }
+  };
+
+  const deleteWorkPackage = async (slug) => {
+    if (!adminSession) {
+      notify(t("toast.notSignedIn"), "error");
+      return false;
+    }
+    try {
+      const res = await apiFetchWithAuth(`/api/work-packages/${encodeURIComponent(slug)}`, {
+        method: "DELETE",
+      });
+      if (handleAuthFailure(res)) return false;
+      if (res.status === 404) {
+        notify(t("toast.wpNotFound"), "error");
+        return false;
+      }
+      if (res.status === 409) {
+        const err = await res.json().catch(() => ({}));
+        notify(err?.error || t("toast.wpInUse"), "error");
+        return false;
+      }
+      if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({}));
+        notify(err?.error || t("toast.deleteFailed"), "error");
+        return false;
+      }
+      await loadWorkPackagesFromServer();
+      notify(t("toast.wpDeleted"));
+      return true;
+    } catch {
+      notify(t("toast.unreachable"), "error");
+      return false;
+    }
+  };
+
   const deleteScenario = async (id) => {
     if (!adminSession) {
       notify(t("toast.notSignedIn"), "error");
@@ -1252,6 +1564,7 @@ export default function AdminView() {
     setShowAddForm(false);
     setEditingScenario(null);
     setShowCategoryManager(false);
+    setShowWorkPackageManager(false);
     setShowConfluenceManager(false);
     setShowAdminsPanel(false);
     loadScenariosFromServer();
@@ -1316,6 +1629,7 @@ export default function AdminView() {
             setShowAddForm(true);
             setEditingScenario(null);
             setShowCategoryManager(false);
+            setShowWorkPackageManager(false);
             setShowConfluenceManager(false);
             setShowAdminsPanel(false);
             setNavOpen(false);
@@ -1328,6 +1642,7 @@ export default function AdminView() {
           style={{ ...styles.ghostBtn, margin: "0 1rem 0.5rem", justifyContent: "center" }}
           onClick={() => {
             setShowCategoryManager(true);
+            setShowWorkPackageManager(false);
             setShowAddForm(false);
             setShowConfluenceManager(false);
             setShowAdminsPanel(false);
@@ -1341,8 +1656,24 @@ export default function AdminView() {
           type="button"
           style={{ ...styles.ghostBtn, margin: "0 1rem 0.5rem", justifyContent: "center" }}
           onClick={() => {
+            setShowWorkPackageManager(true);
+            setShowCategoryManager(false);
+            setShowAddForm(false);
+            setShowConfluenceManager(false);
+            setShowAdminsPanel(false);
+            setEditingScenario(null);
+            setNavOpen(false);
+          }}
+        >
+          {t("admin.manageWps")}
+        </button>
+        <button
+          type="button"
+          style={{ ...styles.ghostBtn, margin: "0 1rem 0.5rem", justifyContent: "center" }}
+          onClick={() => {
             setShowConfluenceManager(true);
             setShowCategoryManager(false);
+            setShowWorkPackageManager(false);
             setShowAdminsPanel(false);
             setShowAddForm(false);
             setEditingScenario(null);
@@ -1358,6 +1689,7 @@ export default function AdminView() {
             setShowAdminsPanel(true);
             setShowConfluenceManager(false);
             setShowCategoryManager(false);
+            setShowWorkPackageManager(false);
             setShowAddForm(false);
             setEditingScenario(null);
             setNavOpen(false);
@@ -1427,12 +1759,24 @@ export default function AdminView() {
               loadScenariosFromServer();
             }}
           />
+        ) : showWorkPackageManager ? (
+          <WorkPackageManager
+            workPackages={workPackageList}
+            onSave={saveWorkPackage}
+            onDelete={deleteWorkPackage}
+            onBack={() => setShowWorkPackageManager(false)}
+          />
         ) : showCategoryManager ? (
           <CategoryManager
             categories={categoryList}
+            workPackages={workPackageList}
             onSave={saveCategory}
             onDelete={deleteCategory}
             onBack={() => setShowCategoryManager(false)}
+            onManageWps={() => {
+              setShowCategoryManager(false);
+              setShowWorkPackageManager(true);
+            }}
           />
         ) : showAddForm || editingScenario ? (
           <ScenarioForm
@@ -1513,7 +1857,7 @@ export default function AdminView() {
                     <>
                       <span style={{ flex: 2, fontWeight: 600, color: "#eaf0fb" }}>{row.title}</span>
                       <span style={{ flex: 1, color: "#8899aa" }}>
-                        {formatCategoryLabel(row.category, row.category_wp)}
+                        {formatCategoryLabel(row.category, row.category_wps)}
                       </span>
                       <span style={{ flex: 1, color: "#8899aa", fontSize: "0.85rem" }}>
                         {VERDICT_CODES.includes(row.verdict) ? t(`verdict.${row.verdict}`) : "—"}
@@ -1536,6 +1880,7 @@ export default function AdminView() {
                             setEditingScenario(row);
                             setShowAddForm(false);
                             setShowCategoryManager(false);
+                            setShowWorkPackageManager(false);
                             setShowConfluenceManager(false);
                             setShowAdminsPanel(false);
                           }}

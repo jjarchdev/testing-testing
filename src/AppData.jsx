@@ -14,6 +14,7 @@ export function useAppData() {
 export function AppDataProvider({ children }) {
   const [scenarios, setScenarios] = useState(null);
   const [categories, setCategories] = useState(null);
+  const [workPackages, setWorkPackages] = useState(null);
   const [scenariosLoadError, setScenariosLoadError] = useState(null);
   const [serverConfig, setServerConfig] = useState({
     loaded: false,
@@ -60,6 +61,19 @@ export function AppDataProvider({ children }) {
     }
   }, []);
 
+  const loadWorkPackagesFromServer = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/work-packages");
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      const list = Array.isArray(data?.workPackages) ? data.workPackages : null;
+      if (!list) throw new Error("bad response");
+      setWorkPackages(list);
+    } catch {
+      setWorkPackages([]);
+    }
+  }, []);
+
   const loadScenariosFromServer = useCallback(async () => {
     setScenariosLoadError(null);
     try {
@@ -78,7 +92,8 @@ export function AppDataProvider({ children }) {
   useEffect(() => {
     loadScenariosFromServer();
     loadCategoriesFromServer();
-  }, [loadScenariosFromServer, loadCategoriesFromServer]);
+    loadWorkPackagesFromServer();
+  }, [loadScenariosFromServer, loadCategoriesFromServer, loadWorkPackagesFromServer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +142,8 @@ export function AppDataProvider({ children }) {
       setScenarios,
       categories,
       setCategories,
+      workPackages,
+      setWorkPackages,
       scenariosLoadError,
       serverConfig,
       adminSession,
@@ -136,10 +153,12 @@ export function AppDataProvider({ children }) {
       notify,
       loadScenariosFromServer,
       loadCategoriesFromServer,
+      loadWorkPackagesFromServer,
     }),
     [
       scenarios,
       categories,
+      workPackages,
       scenariosLoadError,
       serverConfig,
       adminSession,
@@ -147,6 +166,7 @@ export function AppDataProvider({ children }) {
       notify,
       loadScenariosFromServer,
       loadCategoriesFromServer,
+      loadWorkPackagesFromServer,
     ]
   );
 
