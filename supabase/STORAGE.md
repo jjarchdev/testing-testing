@@ -10,7 +10,7 @@ values (
   'scenario-images',
   'scenario-images',
   true,
-  5242880,
+  10485760, -- 10MB (under Free plan 50MB max file size)
   array['image/jpeg','image/png','image/webp','image/gif']
 )
 on conflict (id) do update

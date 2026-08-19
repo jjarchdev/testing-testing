@@ -7,14 +7,14 @@ import LanguageSwitcher from "./LanguageSwitcher.jsx";
 import AdminsPanel from "./AdminsPanel.jsx";
 import ConfluenceManager from "./ConfluenceManager.jsx";
 import ConfluencePagePicker from "./ConfluencePagePicker.jsx";
-import { localePath } from "./utils.js";
+import { localePath, formatCategoryLabel } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
 import { styles } from "./styles.js";
 import { SUPPORTED_SCENARIO_LOCALES, VERDICT_CODES } from "../shared/scenarioSchema.mjs";
 
 const MAX_SCENARIO_IMAGES = 8;
 
-const EMPTY_LANG_SLOT = { title: "", scenario: "", solution: "", tags: "" };
+const EMPTY_LANG_SLOT = { title: "", scenario: "", solution: "", acceptance: "", tags: "" };
 
 function extractTranslations(initial) {
   const out = {};
@@ -25,6 +25,7 @@ function extractTranslations(initial) {
         title: slot.title || "",
         scenario: slot.scenario || "",
         solution: slot.solution || "",
+        acceptance: slot.acceptance || "",
         tags: Array.isArray(slot.tags) ? slot.tags.join(", ") : "",
       };
     } else {
@@ -48,6 +49,7 @@ function translationsToApi(formTranslations) {
       title: slot.title.trim(),
       scenario: slot.scenario,
       solution: slot.solution,
+      acceptance: slot.acceptance || "",
       tags: slot.tags
         .split(",")
         .map((s) => s.trim())
@@ -61,7 +63,7 @@ function translationsEqual(a, b) {
   for (const lng of SUPPORTED_SCENARIO_LOCALES) {
     const x = a[lng] || EMPTY_LANG_SLOT;
     const y = b[lng] || EMPTY_LANG_SLOT;
-    if (x.title !== y.title || x.scenario !== y.scenario || x.solution !== y.solution || x.tags !== y.tags) {
+    if (x.title !== y.title || x.scenario !== y.scenario || x.solution !== y.solution || x.acceptance !== y.acceptance || x.tags !== y.tags) {
       return false;
     }
   }
@@ -86,6 +88,7 @@ function sameUrlList(a, b) {
 function CategoryManager({ categories, onSave, onDelete, onBack }) {
   const { t } = useTranslation();
   const [label, setLabel] = useState("");
+  const [wp, setWp] = useState("");
   const [sortOrder, setSortOrder] = useState("");
   const [editingSlug, setEditingSlug] = useState(null);
   const [formError, setFormError] = useState("");
@@ -100,6 +103,7 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
 
   const resetForm = () => {
     setLabel("");
+    setWp("");
     setSortOrder("");
     setEditingSlug(null);
     setFormError("");
@@ -108,6 +112,7 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
   const startEdit = (cat) => {
     setEditingSlug(cat.slug);
     setLabel(cat.label);
+    setWp(cat.wp || "");
     setSortOrder(String(cat.sort_order));
     setFormError("");
     setDeleteSlug(null);
@@ -132,7 +137,7 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
       setFormError(t("categories.labelRequired"));
       return;
     }
-    const payload = { label: label.trim() };
+    const payload = { label: label.trim(), wp: wp.trim() };
     if (sortOrder.trim() !== "" && Number.isFinite(Number(sortOrder))) {
       payload.sort_order = Number(sortOrder);
     }
@@ -180,6 +185,18 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
             setLabel(e.target.value);
           }}
         />
+        <label style={styles.label}>{t("categories.wp")}</label>
+        <input
+          style={styles.input}
+          placeholder={t("categories.wpPlaceholder")}
+          value={wp}
+          maxLength={32}
+          disabled={busy}
+          onChange={(e) => {
+            setFormError("");
+            setWp(e.target.value);
+          }}
+        />
         <label style={styles.label}>{t("categories.sortOrder")}</label>
         <input
           style={styles.input}
@@ -213,6 +230,7 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
         <div style={{ ...styles.adminTable, marginTop: "2rem" }}>
           <div style={styles.tableHead}>
             <span style={{ flex: 2 }}>{t("categories.colLabel")}</span>
+            <span style={{ width: 90 }}>{t("categories.colWp")}</span>
             <span style={{ flex: 1 }}>{t("categories.colSlug")}</span>
             <span style={{ width: 70 }}>{t("categories.colOrder")}</span>
             <span style={{ flex: 1, textAlign: "right" }}>{t("categories.colActions")}</span>
@@ -250,6 +268,7 @@ function CategoryManager({ categories, onSave, onDelete, onBack }) {
               ) : (
                 <>
                   <span style={{ flex: 2, fontWeight: 600 }}>{cat.label}</span>
+                  <span style={{ width: 90, color: "#8899aa", fontSize: "0.85rem" }}>{cat.wp || "—"}</span>
                   <span style={{ flex: 1, color: "#8899aa", fontSize: "0.85rem" }}>{cat.slug}</span>
                   <span style={{ width: 70, color: "#8899aa" }}>{cat.sort_order}</span>
                   <div style={{ flex: 1, display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
@@ -287,6 +306,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       confluence_page_title: initial?.confluence_page_title || "",
       is_published: initial?.is_published !== false,
       solution_as_checklist: initial?.solution_as_checklist === true,
+      acceptance_as_checklist: initial?.acceptance_as_checklist === true,
       verdict: initial?.verdict || "",
     }),
     [initial, defaultCategory]
@@ -338,7 +358,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           ...f,
           translations: {
             ...f.translations,
-            [lng]: { title: "", scenario: "", solution: "", tags: "" },
+            [lng]: { title: "", scenario: "", solution: "", acceptance: "", tags: "" },
           },
         }));
         if (activeLang === lng) setActiveLang(next[0]);
@@ -359,6 +379,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       form.confluence_page_title !== baseline.confluence_page_title ||
       form.is_published !== baseline.is_published ||
       form.solution_as_checklist !== baseline.solution_as_checklist ||
+      form.acceptance_as_checklist !== baseline.acceptance_as_checklist ||
       form.verdict !== baseline.verdict,
     [form, baseline]
   );
@@ -531,7 +552,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       for (const lng of SUPPORTED_SCENARIO_LOCALES) {
         translationsForSave[lng] = enabledLangs.includes(lng)
           ? form.translations[lng]
-          : { title: "", scenario: "", solution: "", tags: "" };
+          : { title: "", scenario: "", solution: "", acceptance: "", tags: "" };
       }
       await onSave({
         category: form.category,
@@ -543,6 +564,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         confluence_page_title: form.confluence_page_title,
         is_published: form.is_published,
         solution_as_checklist: form.solution_as_checklist,
+        acceptance_as_checklist: form.acceptance_as_checklist,
         verdict: form.verdict,
       });
     } finally {
@@ -576,7 +598,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         ) : (
           categories.map((c) => (
             <option key={c.slug} value={c.label}>
-              {c.label}
+              {formatCategoryLabel(c.label, c.wp)}
             </option>
           ))
         )}
@@ -724,6 +746,56 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       </p>
 
       <label style={styles.label}>
+        {t("scenarioForm.acceptance")} ({LANG_LABELS[activeLang]})
+      </label>
+      <div
+        role="radiogroup"
+        aria-label={t("scenarioForm.acceptanceMode")}
+        style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem" }}
+      >
+        {[
+          { value: false, key: "solutionModeText" },
+          { value: true, key: "solutionModeChecklist" },
+        ].map((opt) => {
+          const active = form.acceptance_as_checklist === opt.value;
+          return (
+            <button
+              key={`ac-${opt.key}`}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={busy}
+              onClick={() => patch("acceptance_as_checklist", opt.value)}
+              style={{
+                ...styles.ghostBtn,
+                padding: "0.4rem 0.85rem",
+                fontSize: "0.85rem",
+                ...(active ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
+              }}
+            >
+              {t(`scenarioForm.${opt.key}`)}
+            </button>
+          );
+        })}
+      </div>
+      <textarea
+        style={{ ...styles.input, height: 140 }}
+        placeholder={
+          form.acceptance_as_checklist
+            ? t("scenarioForm.acceptancePlaceholderChecklist")
+            : t("scenarioForm.acceptancePlaceholder")
+        }
+        value={form.translations[activeLang].acceptance}
+        disabled={busy}
+        onChange={(e) => patchLang(activeLang, "acceptance", e.target.value)}
+      />
+      <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>
+        {form.acceptance_as_checklist
+          ? t("scenarioForm.acceptanceHelpChecklist")
+          : t("scenarioForm.acceptanceHelp")}
+      </p>
+
+      <label style={styles.label}>
         {t("scenarioForm.tags")} ({LANG_LABELS[activeLang]})
       </label>
       <input
@@ -762,20 +834,30 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         <label
           style={{
             ...styles.ghostBtn,
+            position: "relative",
+            overflow: "hidden",
             cursor: busy || uploading || atImageCap ? "default" : "pointer",
             opacity: atImageCap ? 0.55 : 1,
           }}
         >
           <input
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
+            accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
             multiple
-            hidden
             disabled={busy || uploading || atImageCap}
             onChange={async (e) => {
               const list = e.target.files;
               e.target.value = "";
               await handleUploadFiles(list);
+            }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              opacity: 0,
+              width: "100%",
+              height: "100%",
+              cursor: busy || uploading || atImageCap ? "default" : "pointer",
+              fontSize: 0,
             }}
           />
           {uploading ? t("scenarioForm.uploading") : t("scenarioForm.uploadImages")}
@@ -1033,6 +1115,7 @@ export default function AdminView() {
       confluence_page_url: data.confluence_page_url || "",
       confluence_page_title: data.confluence_page_title || "",
       solution_as_checklist: data.solution_as_checklist === true,
+      acceptance_as_checklist: data.acceptance_as_checklist === true,
       verdict: data.verdict || "",
     };
     try {
@@ -1429,7 +1512,9 @@ export default function AdminView() {
                   ) : (
                     <>
                       <span style={{ flex: 2, fontWeight: 600, color: "#eaf0fb" }}>{row.title}</span>
-                      <span style={{ flex: 1, color: "#8899aa" }}>{row.category}</span>
+                      <span style={{ flex: 1, color: "#8899aa" }}>
+                        {formatCategoryLabel(row.category, row.category_wp)}
+                      </span>
                       <span style={{ flex: 1, color: "#8899aa", fontSize: "0.85rem" }}>
                         {VERDICT_CODES.includes(row.verdict) ? t(`verdict.${row.verdict}`) : "—"}
                       </span>

@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { normalizeCategory, slugifyLabel } from "../shared/categoryMap.mjs";
+import { normalizeCategory, sanitizeWp, slugifyLabel } from "../shared/categoryMap.mjs";
 import {
   normalizeScenario,
   sanitizeImageUrls,
@@ -87,7 +87,9 @@ export function rowToScenario(row) {
         typeof row.confluence_page_title === "string" ? row.confluence_page_title : "",
       is_published: typeof row.is_published === "boolean" ? row.is_published : undefined,
       solution_as_checklist: row.solution_as_checklist === true,
+      acceptance_as_checklist: row.acceptance_as_checklist === true,
       verdict: row.verdict ?? null,
+      category_wp: row.category_wp ?? "",
     },
     allowLocal
   );
@@ -146,7 +148,7 @@ export async function listCategories() {
   const sb = getSupabase();
   const { data, error } = await sb
     .from("categories")
-    .select("slug, label, sort_order")
+    .select("slug, label, sort_order, wp")
     .order("sort_order", { ascending: true })
     .order("label", { ascending: true });
   if (error) throw error;
@@ -158,7 +160,7 @@ async function findCategoryByLabel(label) {
   const trimmed = String(label || "").trim();
   const { data, error } = await sb
     .from("categories")
-    .select("slug, label, sort_order")
+    .select("slug, label, sort_order, wp")
     .eq("label", trimmed)
     .maybeSingle();
   if (error) throw error;
@@ -169,7 +171,7 @@ async function findCategoryBySlug(slug) {
   const sb = getSupabase();
   const { data, error } = await sb
     .from("categories")
-    .select("slug, label, sort_order")
+    .select("slug, label, sort_order, wp")
     .eq("slug", slug)
     .maybeSingle();
   if (error) throw error;
@@ -235,8 +237,8 @@ export async function insertCategory(payload) {
 
   const { data, error } = await sb
     .from("categories")
-    .insert({ slug, label, sort_order })
-    .select("slug, label, sort_order")
+    .insert({ slug, label, sort_order, wp: sanitizeWp(payload?.wp) || null })
+    .select("slug, label, sort_order, wp")
     .single();
   if (error) mapCategoryDbError(error);
   return rowToCategory(data);
@@ -253,6 +255,9 @@ export async function updateCategory(slug, payload) {
   }
   if (payload?.sort_order != null && Number.isFinite(Number(payload.sort_order))) {
     updates.sort_order = Number(payload.sort_order);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "wp")) {
+    updates.wp = sanitizeWp(payload.wp) || null;
   }
   if (Object.keys(updates).length === 0) return current;
 
@@ -332,6 +337,7 @@ export async function insertScenario(payload) {
       sort_order: payload.sort_order ?? 0,
       is_published: payload.is_published !== false,
       solution_as_checklist: payload.solution_as_checklist === true,
+      acceptance_as_checklist: payload.acceptance_as_checklist === true,
       verdict: payload.verdict || null,
     })
     .select("id")
@@ -363,6 +369,7 @@ export async function updateScenario(id, payload) {
     confluence_page_title: payload.confluence_page_title || null,
     sort_order: payload.sort_order ?? 0,
     solution_as_checklist: payload.solution_as_checklist === true,
+    acceptance_as_checklist: payload.acceptance_as_checklist === true,
     verdict: payload.verdict || null,
   };
   if (typeof payload.is_published === "boolean") {

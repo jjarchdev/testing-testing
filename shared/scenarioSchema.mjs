@@ -129,9 +129,11 @@ export function sanitizeTranslation(raw) {
     typeof raw.scenario === "string" ? raw.scenario.slice(0, BODY_MAX_LEN) : "";
   const solution =
     typeof raw.solution === "string" ? raw.solution.slice(0, BODY_MAX_LEN) : "";
+  const acceptance =
+    typeof raw.acceptance === "string" ? raw.acceptance.slice(0, BODY_MAX_LEN) : "";
   const tags = sanitizeTags(raw.tags);
   if (!title.trim() && !scenario.trim() && !solution.trim()) return null;
-  return { title, scenario, solution, tags };
+  return { title, scenario, solution, acceptance, tags };
 }
 
 export function sanitizeTranslations(raw) {
@@ -155,7 +157,7 @@ export function pickTranslation(scenario, preferred) {
   if (preferred) {
     const slot = t[preferred];
     if (slot && (slot.title || "").trim() && (slot.scenario || "").trim() && (slot.solution || "").trim()) {
-      return { ...slot, _language: preferred };
+      return { ...slot, acceptance: slot.acceptance || "", _language: preferred };
     }
   }
 
@@ -164,10 +166,22 @@ export function pickTranslation(scenario, preferred) {
     const sc = (scenario.scenario || "").trim();
     const sol = (scenario.solution || "").trim();
     if (!title || !sc || !sol) return null;
+    const order = [preferred, ...SUPPORTED_SCENARIO_LOCALES].filter(
+      (l, i, arr) => l && arr.indexOf(l) === i
+    );
+    let acceptance = "";
+    for (const lng of order) {
+      const text = (t[lng]?.acceptance || "").trim();
+      if (text) {
+        acceptance = t[lng].acceptance;
+        break;
+      }
+    }
     return {
       title: scenario.title || "",
       scenario: scenario.scenario || "",
       solution: scenario.solution || "",
+      acceptance,
       tags: Array.isArray(scenario.tags) ? scenario.tags : [],
       _language: null,
     };
@@ -195,7 +209,9 @@ export function normalizeScenario(s, options = {}) {
     confluence_page_title:
       typeof s.confluence_page_title === "string" ? s.confluence_page_title.slice(0, 240) : "",
     solution_as_checklist: coerceSolutionAsChecklist(s.solution_as_checklist),
+    acceptance_as_checklist: coerceSolutionAsChecklist(s.acceptance_as_checklist),
     verdict: parseVerdict(s.verdict) || null,
+    category_wp: typeof s.category_wp === "string" ? s.category_wp.trim().slice(0, 32) : "",
   };
   if (typeof s.is_published === "boolean") {
     out.is_published = s.is_published;

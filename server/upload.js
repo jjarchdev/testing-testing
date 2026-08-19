@@ -9,7 +9,7 @@ const ROOT = path.join(__dirname, "..");
 export const UPLOADS_DIR = path.join(ROOT, "data", "uploads");
 export const STORAGE_BUCKET = "scenario-images";
 const BUCKET = STORAGE_BUCKET;
-const MAX_BYTES = 5 * 1024 * 1024;
+export const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const UPLOAD_TIMEOUT_MS = 45_000;
 
@@ -19,7 +19,7 @@ export function assertImageFile(file) {
     throw new Error("Only JPEG, PNG, WebP, or GIF images are allowed");
   }
   if (file.size > MAX_BYTES) {
-    throw new Error("Image must be 5MB or smaller");
+    throw new Error("Image must be 10MB or smaller");
   }
 }
 
@@ -60,15 +60,17 @@ export async function ensureScenarioImagesBucket(sb = getSupabase()) {
 
   const existing = buckets.find((b) => b.name === BUCKET);
   if (existing) {
-    if (existing.public === false) {
-      const { error: updateError } = await sb.storage.updateBucket(BUCKET, {
-        public: true,
-      });
-      if (updateError) {
+    const { error: updateError } = await sb.storage.updateBucket(BUCKET, {
+      public: true,
+      fileSizeLimit: MAX_BYTES,
+    });
+    if (updateError) {
+      if (existing.public === false) {
         throw new Error(
           `Storage bucket '${BUCKET}' exists but is private. Make it public in Supabase Storage (employees need anonymous read). ${updateError.message || ""}`.trim()
         );
       }
+      console.warn("[upload] updateBucket:", updateError.message || updateError);
     }
     return;
   }

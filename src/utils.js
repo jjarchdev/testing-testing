@@ -38,3 +38,9 @@ export function localePath(lng, ...parts) {
   const rest = parts.filter(Boolean).join("/").replace(/^\/+/, "");
   return rest ? `/${lng}/${rest}` : `/${lng}`;
 }
+
+export function formatCategoryLabel(label, wp) {
+  const l = String(label || "").trim();
+  const w = String(wp || "").trim();
+  return w ? `${l} · ${w}` : l;
+}

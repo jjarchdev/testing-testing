@@ -5,7 +5,7 @@ import LanguageSwitcher from "./LanguageSwitcher.jsx";
 import ConfluenceView from "./ConfluenceView.jsx";
 import { useAppData } from "./AppData.jsx";
 import { pickTranslation, VERDICT_CODES } from "../shared/scenarioSchema.mjs";
-import { ALL_FILTER, accentForCategory, buildCategoryCounts, localePath } from "./utils.js";
+import { ALL_FILTER, accentForCategory, buildCategoryCounts, localePath, formatCategoryLabel } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
 import { pushRecentId, readRecentIds } from "./recent.js";
 import { styles } from "./styles.js";
@@ -19,16 +19,24 @@ function normalizeSearchText(value) {
     .trim();
 }
 
-function scenarioMatchesQuery(scenario, rawQuery) {
+function scenarioMatchesQuery(scenario, rawQuery, extraParts = []) {
   const q = normalizeSearchText(rawQuery);
   if (!q) return true;
-  const parts = [scenario.title, scenario.category, scenario.scenario, scenario.solution];
+  const parts = [
+    scenario.title,
+    scenario.category,
+    scenario.category_wp,
+    scenario.scenario,
+    scenario.solution,
+    scenario.verdict,
+    ...extraParts,
+  ];
   if (Array.isArray(scenario.tags)) parts.push(...scenario.tags);
   const tr = scenario.translations || {};
   for (const lng of Object.keys(tr)) {
     const slot = tr[lng];
     if (!slot) continue;
-    parts.push(slot.title, slot.scenario, slot.solution);
+    parts.push(slot.title, slot.scenario, slot.solution, slot.acceptance);
     if (Array.isArray(slot.tags)) parts.push(...slot.tags);
   }
   const haystack = normalizeSearchText(parts.filter(Boolean).join(" "));
@@ -102,6 +110,18 @@ function parseParagraphBlocks(solution) {
     .map((p, i) => ({ type: "para", text: p, key: `p-${i}` }));
 }
 
+function prefixBlockKeys(blocks, prefix) {
+  return blocks.map((b) =>
+    b.type === "steps"
+      ? {
+          ...b,
+          key: `${prefix}${b.key}`,
+          steps: b.steps.map((s) => ({ ...s, key: `${prefix}${s.key}` })),
+        }
+      : { ...b, key: `${prefix}${b.key}` }
+  );
+}
+
 function verdictBadgeStyle(code) {
   if (code === "to_be_rejected") return { color: "#e74c3c", borderColor: "#e74c3c" };
   if (code === "acceptable") return { color: "#1abc9c", borderColor: "#1abc9c" };
@@ -129,6 +149,52 @@ function VerdictBadge({ code, t }) {
 
 function totalStepCount(blocks) {
   return blocks.reduce((n, b) => n + (b.type === "steps" ? b.steps.length : 0), 0);
+}
+
+function SolutionBlockList({ blocks, checked, onToggle, markLabel }) {
+  return blocks.map((block) =>
+    block.type === "steps" ? (
+      <ol key={block.key} style={styles.stepList}>
+        {block.steps.map((step) => {
+          const isChecked = !!checked[step.key];
+          return (
+            <li key={step.key} style={styles.stepItem}>
+              <label
+                className="no-print"
+                style={{ display: "flex", alignItems: "center", marginRight: "0.25rem" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  aria-label={markLabel}
+                  onChange={(e) => onToggle(step.key, e.target.checked)}
+                />
+              </label>
+              <span
+                style={{
+                  ...styles.stepNum,
+                  opacity: isChecked ? 0.55 : 1,
+                }}
+              >
+                {step.num}
+              </span>
+              <span
+                style={{
+                  ...styles.stepText,
+                  textDecoration: isChecked ? "line-through" : "none",
+                  opacity: isChecked ? 0.65 : 1,
+                }}
+              >
+                {step.text}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    ) : (
+      <ParagraphText key={block.key} text={block.text} baseStyle={styles.detailBody} />
+    )
+  );
 }
 
 function ParagraphText({ text, baseStyle }) {
@@ -167,7 +233,11 @@ function scenarioImageUrls(scenario) {
   return [];
 }
 
-function ScenarioCard({ scenario, view, onSelect, openLabel }) {
+function wpFor(scenario, wpByLabel) {
+  return String(scenario?.category_wp || wpByLabel?.[scenario?.category] || "").trim();
+}
+
+function ScenarioCard({ scenario, view, onSelect, openLabel, categoryWp }) {
   const { t } = useTranslation();
   const color = accentForCategory(scenario.category);
   const text = view.scenario;
@@ -222,7 +292,7 @@ function ScenarioCard({ scenario, view, onSelect, openLabel }) {
           ) : null}
         </div>
       ) : null}
-      <div style={styles.cardCat}>{scenario.category}</div>
+      <div style={styles.cardCat}>{formatCategoryLabel(scenario.category, categoryWp)}</div>
       <VerdictBadge code={scenario.verdict} t={t} />
       <h3 style={styles.cardTitle}>{title}</h3>
       <p style={styles.cardSnippet}>{snippet}</p>
@@ -238,7 +308,7 @@ function ScenarioCard({ scenario, view, onSelect, openLabel }) {
   );
 }
 
-function ScenarioDetail({ scenario, view, onBack, onNotify }) {
+function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp }) {
   const { t } = useTranslation();
   const blocks = useMemo(
     () =>
@@ -247,7 +317,20 @@ function ScenarioDetail({ scenario, view, onBack, onNotify }) {
         : parseParagraphBlocks(view?.solution),
     [view?.solution, scenario.solution_as_checklist]
   );
-  const stepTotal = useMemo(() => totalStepCount(blocks), [blocks]);
+  const acceptanceText = (view?.acceptance || "").trim();
+  const acceptanceBlocks = useMemo(
+    () => {
+      if (!acceptanceText) return [];
+      return scenario.acceptance_as_checklist
+        ? prefixBlockKeys(parseSolutionBlocks(view?.acceptance), "ac-")
+        : prefixBlockKeys(parseParagraphBlocks(view?.acceptance), "ac-");
+    },
+    [view?.acceptance, scenario.acceptance_as_checklist, acceptanceText]
+  );
+  const stepTotal = useMemo(
+    () => totalStepCount(blocks) + totalStepCount(acceptanceBlocks),
+    [blocks, acceptanceBlocks]
+  );
   const images = useMemo(() => scenarioImageUrls(scenario), [scenario]);
   const [checked, setChecked] = useState(() => ({}));
   const [lightboxIndex, setLightboxIndex] = useState(null);
@@ -289,6 +372,17 @@ function ScenarioDetail({ scenario, view, onBack, onNotify }) {
         bodyParts.push(b.text);
       }
       bodyParts.push("");
+    }
+    if (acceptanceText) {
+      bodyParts.push(`${t("employee.acceptance")}:`);
+      for (const b of acceptanceBlocks) {
+        if (b.type === "steps") {
+          for (const s of b.steps) bodyParts.push(`${s.num}. ${s.text}`);
+        } else {
+          bodyParts.push(b.text);
+        }
+        bodyParts.push("");
+      }
     }
     try {
       await navigator.clipboard.writeText(bodyParts.join("\n").trim());
@@ -349,7 +443,7 @@ function ScenarioDetail({ scenario, view, onBack, onNotify }) {
           {t("employee.backAll")}
         </button>
       </div>
-      <div style={styles.detailCat}>{scenario.category}</div>
+      <div style={styles.detailCat}>{formatCategoryLabel(scenario.category, categoryWp)}</div>
       <h2 id="scenario-detail-title" style={styles.detailTitle}>
         {title}
       </h2>
@@ -471,52 +565,24 @@ function ScenarioDetail({ scenario, view, onBack, onNotify }) {
       ) : null}
       <div style={styles.detailSection}>
         <div style={styles.detailSectionLabel}>{t("employee.procedure")}</div>
-        {blocks.map((block) =>
-          block.type === "steps" ? (
-            <ol key={block.key} style={styles.stepList}>
-              {block.steps.map((step) => {
-                const isChecked = !!checked[step.key];
-                return (
-                  <li key={step.key} style={styles.stepItem}>
-                    <label
-                      className="no-print"
-                      style={{ display: "flex", alignItems: "center", marginRight: "0.25rem" }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        aria-label={t("employee.markStep")}
-                        onChange={(e) =>
-                          setChecked((prev) => ({ ...prev, [step.key]: e.target.checked }))
-                        }
-                      />
-                    </label>
-                    <span
-                      style={{
-                        ...styles.stepNum,
-                        opacity: isChecked ? 0.55 : 1,
-                      }}
-                    >
-                      {step.num}
-                    </span>
-                    <span
-                      style={{
-                        ...styles.stepText,
-                        textDecoration: isChecked ? "line-through" : "none",
-                        opacity: isChecked ? 0.65 : 1,
-                      }}
-                    >
-                      {step.text}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          ) : (
-            <ParagraphText key={block.key} text={block.text} baseStyle={styles.detailBody} />
-          )
-        )}
+        <SolutionBlockList
+          blocks={blocks}
+          checked={checked}
+          markLabel={t("employee.markStep")}
+          onToggle={(key, value) => setChecked((prev) => ({ ...prev, [key]: value }))}
+        />
       </div>
+      {acceptanceText ? (
+        <div style={styles.detailSection}>
+          <div style={styles.detailSectionLabel}>{t("employee.acceptance")}</div>
+          <SolutionBlockList
+            blocks={acceptanceBlocks}
+            checked={checked}
+            markLabel={t("employee.markStep")}
+            onToggle={(key, value) => setChecked((prev) => ({ ...prev, [key]: value }))}
+          />
+        </div>
+      ) : null}
       <div style={styles.detailTags}>
         {tags.map((tag, i) => (
           <span key={`${tag}-${i}`} style={styles.tagLarge}>
@@ -544,6 +610,7 @@ export default function EmployeeView() {
   const viewFor = (s) => pickTranslation(s, activeLng);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterCategory, setFilterCategory] = useState(ALL_FILTER);
+  const [filterWp, setFilterWp] = useState("");
   const [filterVerdict, setFilterVerdict] = useState(null);
   const [recentIds, setRecentIds] = useState(() => readRecentIds());
   const narrow = useIsNarrow();
@@ -556,9 +623,27 @@ export default function EmployeeView() {
     () => scenarioList.filter((s) => viewFor(s) && VERDICT_CODES.includes(s.verdict)),
     [scenarioList, activeLng]
   );
-  const categoryCounts = useMemo(() => buildCategoryCounts(classifiedList), [classifiedList]);
   const categoryLabels = useMemo(() => (categories || []).map((c) => c.label), [categories]);
   const allCategories = useMemo(() => [ALL_FILTER, ...categoryLabels], [categoryLabels]);
+  const wpByLabel = useMemo(() => {
+    const m = Object.create(null);
+    for (const c of categories || []) {
+      m[c.label] = String(c.wp || "").trim();
+    }
+    return m;
+  }, [categories]);
+  const wpValues = useMemo(() => {
+    const set = new Set();
+    for (const c of categories || []) {
+      const w = String(c.wp || "").trim();
+      if (w) set.add(w);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [categories]);
+  const categoryCounts = useMemo(() => {
+    const forWp = classifiedList.filter((s) => !filterWp || wpFor(s, wpByLabel) === filterWp);
+    return buildCategoryCounts(forWp);
+  }, [classifiedList, filterWp, wpByLabel]);
 
   const selectedScenario = useMemo(() => {
     if (scenarioId == null || scenarioId === "") return null;
@@ -569,10 +654,12 @@ export default function EmployeeView() {
 
   const inCategory = useMemo(
     () =>
-      classifiedList.filter(
-        (s) => filterCategory === ALL_FILTER || s.category === filterCategory
-      ),
-    [classifiedList, filterCategory]
+      classifiedList.filter((s) => {
+        const matchesCat = filterCategory === ALL_FILTER || s.category === filterCategory;
+        const matchesWp = !filterWp || wpFor(s, wpByLabel) === filterWp;
+        return matchesCat && matchesWp;
+      }),
+    [classifiedList, filterCategory, filterWp, wpByLabel]
   );
 
   const verdictCounts = useMemo(() => {
@@ -591,12 +678,16 @@ export default function EmployeeView() {
   const filteredScenarios = useMemo(() => {
     return classifiedList.filter((s) => {
       const matchesCat = filterCategory === ALL_FILTER || s.category === filterCategory;
-      if (!matchesCat) return false;
-      if (searching) return scenarioMatchesQuery(s, searchQuery);
+      const matchesWp = !filterWp || wpFor(s, wpByLabel) === filterWp;
+      if (!matchesCat || !matchesWp) return false;
+      if (searching) {
+        const verdictLabel = VERDICT_CODES.includes(s.verdict) ? t(`verdict.${s.verdict}`) : "";
+        return scenarioMatchesQuery(s, searchQuery, [verdictLabel, wpFor(s, wpByLabel)]);
+      }
       if (filterVerdict && s.verdict !== filterVerdict) return false;
       return true;
     });
-  }, [classifiedList, searchQuery, filterCategory, filterVerdict, searching]);
+  }, [classifiedList, searchQuery, filterCategory, filterWp, filterVerdict, searching, t, wpByLabel]);
 
   const recentScenarios = useMemo(() => {
     const byId = new Map(classifiedList.map((s) => [s.id, s]));
@@ -617,6 +708,10 @@ export default function EmployeeView() {
   const closeDetail = () => {
     navigate(localePath(lng, "employee"));
   };
+
+  useEffect(() => {
+    if (filterWp && !wpValues.includes(filterWp)) setFilterWp("");
+  }, [filterWp, wpValues]);
 
   useEffect(() => {
     if (!narrow) setNavOpen(false);
@@ -669,6 +764,10 @@ export default function EmployeeView() {
           setFilterVerdict(null);
           return;
         }
+        if (filterWp) {
+          setFilterWp("");
+          return;
+        }
         if (filterCategory !== ALL_FILTER) {
           setFilterCategory(ALL_FILTER);
         }
@@ -683,11 +782,12 @@ export default function EmployeeView() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navOpen, selectedScenario, narrow, lng, searching, filterVerdict, filterCategory]);
+  }, [navOpen, selectedScenario, narrow, lng, searching, filterVerdict, filterCategory, filterWp]);
 
   const emptyMessage = () => {
     if (searching) return t("employee.emptySearch");
     if (filterVerdict) return t("employee.emptyVerdict");
+    if (filterWp) return t("employee.emptyWp");
     if (filterCategory !== ALL_FILTER) return t("employee.emptyCategory");
     if (classifiedList.length > 0) return t("employee.emptyLanguage");
     return t("employee.emptyPublished");
@@ -764,6 +864,52 @@ export default function EmployeeView() {
         <div style={{ padding: "0 1rem 0.75rem", color: "#8899aa", fontSize: "0.72rem" }}>
           {t("employee.searchShortcutHint")}
         </div>
+        {wpValues.length > 0 ? (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.35rem",
+              padding: "0 1rem 0.85rem",
+            }}
+          >
+            <button
+              type="button"
+              style={{
+                ...styles.ghostBtn,
+                padding: "0.3rem 0.65rem",
+                fontSize: "0.75rem",
+                ...(filterWp === "" ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
+              }}
+              onClick={() => {
+                setFilterWp("");
+                setFilterVerdict(null);
+                if (selectedScenario) closeDetail();
+              }}
+            >
+              {t("employee.allWps")}
+            </button>
+            {wpValues.map((w) => (
+              <button
+                key={w}
+                type="button"
+                style={{
+                  ...styles.ghostBtn,
+                  padding: "0.3rem 0.65rem",
+                  fontSize: "0.75rem",
+                  ...(filterWp === w ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
+                }}
+                onClick={() => {
+                  setFilterWp(w);
+                  setFilterVerdict(null);
+                  if (selectedScenario) closeDetail();
+                }}
+              >
+                {w}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         {recentScenarios.length > 0 ? (
           <div style={{ padding: "0 0.5rem 0.75rem" }}>
@@ -820,7 +966,18 @@ export default function EmployeeView() {
                 setNavOpen(false);
               }}
             >
-              {cat === ALL_FILTER ? t("common.all") : cat}
+              {cat === ALL_FILTER ? (
+                t("common.all")
+              ) : (
+                <span style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1, marginRight: 8 }}>
+                  <span>{cat}</span>
+                  {wpByLabel[cat] ? (
+                    <span style={{ fontSize: "0.72rem", color: "#8899aa", fontWeight: 600 }}>
+                      {wpByLabel[cat]}
+                    </span>
+                  ) : null}
+                </span>
+              )}
               <span style={styles.catCount}>
                 {cat === ALL_FILTER ? categoryCounts.total : categoryCounts.by[cat] ?? 0}
               </span>
@@ -862,7 +1019,7 @@ export default function EmployeeView() {
                     ? t(`verdict.${filterVerdict}`)
                     : filterCategory === ALL_FILTER
                       ? t("employee.chooseVerdict")
-                      : filterCategory}
+                      : formatCategoryLabel(filterCategory, wpByLabel[filterCategory])}
             </span>
           </div>
         ) : null}
@@ -879,6 +1036,7 @@ export default function EmployeeView() {
           <ScenarioDetail
             scenario={selectedScenario}
             view={viewFor(selectedScenario)}
+            categoryWp={wpFor(selectedScenario, wpByLabel)}
             onBack={closeDetail}
             onNotify={notify}
           />
@@ -886,7 +1044,9 @@ export default function EmployeeView() {
           <>
             <div style={styles.mainHeader}>
               <h2 style={styles.mainTitle}>
-                {filterCategory === ALL_FILTER ? t("employee.chooseVerdict") : filterCategory}
+                {filterCategory === ALL_FILTER
+                  ? t("employee.chooseVerdict")
+                  : formatCategoryLabel(filterCategory, wpByLabel[filterCategory])}
               </h2>
               <span style={styles.mainCount}>
                 {t("employee.proceduresCount", { count: inCategory.length })}
@@ -943,7 +1103,7 @@ export default function EmployeeView() {
                   {searching
                     ? filterCategory === ALL_FILTER
                       ? t("employee.allScenarios")
-                      : filterCategory
+                      : formatCategoryLabel(filterCategory, wpByLabel[filterCategory])
                     : t(`verdict.${filterVerdict}`)}
                 </h2>
               </div>
@@ -962,6 +1122,7 @@ export default function EmployeeView() {
                     key={s.id}
                     scenario={s}
                     view={viewFor(s)}
+                    categoryWp={wpFor(s, wpByLabel)}
                     openLabel={t("employee.open")}
                     onSelect={() => openScenario(s)}
                   />

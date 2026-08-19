@@ -15,7 +15,9 @@ Follow these steps in order. The browser never talks to Supabase directly — on
    * **Authentication → Email Templates**: optionally rebrand the sign-up / reset templates.
 4b. For multiple images per scenario, run [`supabase/migrations/004_scenario_images.sql`](supabase/migrations/004_scenario_images.sql)
 4c. For per-language scenario text (required by the current admin UI), run [`supabase/migrations/005_scenario_translations.sql`](supabase/migrations/005_scenario_translations.sql)
-5. Confirm tables/columns exist under **Table Editor**: `categories`, `scenarios` (with `image_urls` and `translations`), and (for Manage Admins) `app_admins`
+4d. For procedure checklist mode and verdicts, run [`supabase/migrations/006_solution_mode_and_verdict.sql`](supabase/migrations/006_solution_mode_and_verdict.sql)
+4e. For acceptance criteria and category WP (required by the current admin and reader UI), run [`supabase/migrations/007_acceptance_and_wp.sql`](supabase/migrations/007_acceptance_and_wp.sql). Local `npm run dev` with the file store does **not** need these SQL files.
+5. Confirm tables/columns exist under **Table Editor**: `categories` (including `wp`), `scenarios` (with `image_urls`, `translations`, `verdict`, `acceptance_as_checklist`), and (for Manage Admins) `app_admins`
 6. **Storage** (for admin image uploads): create a **public** bucket named `scenario-images` (see [`supabase/STORAGE.md`](supabase/STORAGE.md)). The server also tries to create this bucket on first upload when `SUPABASE_SECRET_KEY` is set.
 7. **Project Settings → API**:
    - Copy **Project URL** → use as `SUPABASE_URL`

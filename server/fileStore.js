@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { normalizeCategory, slugifyLabel } from "../shared/categoryMap.mjs";
+import { normalizeCategory, sanitizeWp, slugifyLabel } from "../shared/categoryMap.mjs";
 import { normalizeScenario } from "../shared/scenarioSchema.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,7 +69,7 @@ async function loadStore() {
       label,
       sort_order: i + 1,
     }));
-    return { categories, scenarios };
+    return { categories, scenarios: withCategoryWp(scenarios, categories) };
   }
 
   const scenarios = parseScenarioList(
@@ -90,7 +90,18 @@ async function loadStore() {
     }));
   }
 
-  return { categories, scenarios };
+  return {
+    categories,
+    scenarios: withCategoryWp(scenarios, categories),
+  };
+}
+
+function withCategoryWp(scenarios, categories) {
+  const byLabel = Object.create(null);
+  for (const c of categories) {
+    if (c?.label) byLabel[c.label] = c.wp || "";
+  }
+  return scenarios.map((s) => normalizeScenario({ ...s, category_wp: byLabel[s.category] || "" })).filter(Boolean);
 }
 
 async function persistStore({ categories, scenarios }) {
@@ -101,7 +112,7 @@ async function persistStore({ categories, scenarios }) {
   if (normalizedCategories.length !== categories.length) {
     throw new Error("Invalid categories");
   }
-  const normalizedScenarios = scenarios.map((s) => normalizeScenario(s)).filter(Boolean);
+  const normalizedScenarios = withCategoryWp(scenarios, normalizedCategories);
   if (normalizedScenarios.length !== scenarios.length) {
     throw new Error("Invalid scenarios");
   }
@@ -160,7 +171,7 @@ export async function insertCategoryOnDisk(payload) {
       ? Number(payload.sort_order)
       : store.categories.reduce((max, c) => Math.max(max, c.sort_order), 0) + 1;
 
-  const category = { slug, label, sort_order };
+  const category = { slug, label, sort_order, wp: sanitizeWp(payload?.wp) };
   await persistStore({
     categories: [...store.categories, category].sort(
       (a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label)
@@ -190,7 +201,10 @@ export async function updateCategoryOnDisk(slug, payload) {
       ? Number(payload.sort_order)
       : current.sort_order;
 
-  const updated = { ...current, label: nextLabel, sort_order };
+  const wp = Object.prototype.hasOwnProperty.call(payload || {}, "wp")
+    ? sanitizeWp(payload.wp)
+    : current.wp || "";
+  const updated = { ...current, label: nextLabel, sort_order, wp };
   const categories = store.categories.map((c) => (c.slug === slug ? updated : c));
 
   const scenarios =

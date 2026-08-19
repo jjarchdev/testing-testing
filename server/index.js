@@ -50,9 +50,15 @@ const {
   parseVerdict,
   coerceSolutionAsChecklist,
 } = await import("../shared/scenarioSchema.mjs");
-const { normalizeCategory } = await import("../shared/categoryMap.mjs");
-const { saveUploadedImage, UPLOADS_DIR, removeStoredImages, imageUrlsFromScenario, urlsRemovedFromScenario } =
-  await import("./upload.js");
+const { normalizeCategory, sanitizeWp } = await import("../shared/categoryMap.mjs");
+const {
+  saveUploadedImage,
+  UPLOADS_DIR,
+  removeStoredImages,
+  imageUrlsFromScenario,
+  urlsRemovedFromScenario,
+  MAX_BYTES,
+} = await import("./upload.js");
 const { encryptionKeySource, safeStringEquals } = await import("./secrets.js");
 const {
   cloudConfigured,
@@ -289,6 +295,7 @@ function parseScenarioBody(body) {
         : "",
     is_published: body?.is_published !== false && body?.is_published !== "false",
     solution_as_checklist: coerceSolutionAsChecklist(body?.solution_as_checklist),
+    acceptance_as_checklist: coerceSolutionAsChecklist(body?.acceptance_as_checklist),
     verdict,
   };
   const normalized = normalizeScenario(
@@ -312,7 +319,8 @@ function parseCategoryBody(body) {
       ? Number(body.sort_order)
       : undefined;
   const slug = typeof body?.slug === "string" ? body.slug.trim() : undefined;
-  return { label, sort_order, slug };
+  const wp = sanitizeWp(body?.wp);
+  return { label, sort_order, slug, wp };
 }
 
 const loginAttempts = new Map();
@@ -410,7 +418,7 @@ app.use((req, res, next) => {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  limits: { fileSize: MAX_BYTES, files: 1 },
 });
 
 function detectImageMime(buf) {
@@ -438,7 +446,7 @@ app.post("/api/uploads/image", requireAuth, (req, res) => {
   upload.single("file")(req, res, async (err) => {
     if (err) {
       const msg =
-        err.code === "LIMIT_FILE_SIZE" ? "Image must be 5MB or smaller" : err.message || "Upload failed";
+        err.code === "LIMIT_FILE_SIZE" ? "Image must be 10MB or smaller" : err.message || "Upload failed";
       return res.status(400).json({ error: msg });
     }
     if (!req.file?.buffer) {
@@ -547,12 +555,16 @@ app.put("/api/categories/:slug", requireAuth, async (req, res) => {
       req.body?.sort_order != null && Number.isFinite(Number(req.body.sort_order))
         ? Number(req.body.sort_order)
         : undefined;
-    if (label === undefined && sort_order === undefined) {
+    const hasWp = Object.prototype.hasOwnProperty.call(req.body || {}, "wp");
+    const wp = hasWp ? sanitizeWp(req.body.wp) : undefined;
+    if (label === undefined && sort_order === undefined && !hasWp) {
       return res.status(400).json({ error: "Nothing to update" });
     }
+    const payload = { label, sort_order };
+    if (hasWp) payload.wp = wp;
     const category = isSupabaseConfigured()
-      ? await updateCategory(slug, { label, sort_order })
-      : await updateCategoryOnDisk(slug, { label, sort_order });
+      ? await updateCategory(slug, payload)
+      : await updateCategoryOnDisk(slug, payload);
     if (!category) return res.status(404).json({ error: "Not found" });
     res.json({ category: normalizeCategory(category) });
   } catch (e) {
@@ -621,8 +633,9 @@ app.post("/api/scenarios", requireAuth, async (req, res) => {
       { id: nextId, ...payload, category: categoryLabel },
       payload.is_published !== false
     );
-    await writeScenariosToDisk([...list, scenario]);
-    res.status(201).json({ scenario });
+    const written = await writeScenariosToDisk([...list, scenario]);
+    const saved = written.find((s) => s.id === nextId) || scenario;
+    res.status(201).json({ scenario: saved });
   } catch (e) {
     console.error("[handler] create:", e?.message || e);
     res.status(400).json({ error: e.message || "Create failed" });
@@ -658,9 +671,10 @@ app.put("/api/scenarios/:id", requireAuth, async (req, res) => {
       payload.is_published !== false
     );
     const next = list.map((s) => (s.id === id ? scenario : s));
-    await writeScenariosToDisk(next);
+    const written = await writeScenariosToDisk(next);
     await removeStoredImages(urlsRemovedFromScenario(previous, scenario.image_urls));
-    res.json({ scenario });
+    const saved = written.find((s) => s.id === id) || scenario;
+    res.json({ scenario: saved });
   } catch (e) {
     console.error("[handler] update:", e?.message || e);
     res.status(400).json({ error: e.message || "Update failed" });
