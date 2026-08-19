@@ -1,0 +1,70 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0d1520;
+}
+
+.scenario-upload-hit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.scenario-upload-hit:disabled {
+  cursor: default;
+}
+
+.scenario-upload-hit::file-selector-button,
+.scenario-upload-hit::-webkit-file-upload-button {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: inherit;
+}
+
+@media print {
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-root,
+  .print-root * {
+    visibility: visible;
+  }
+
+  .print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: #fff !important;
+    color: #111 !important;
+    padding: 1rem;
+  }
+
+  .print-root h1,
+  .print-root h2,
+  .print-root p,
+  .print-root li,
+  .print-root span {
+    color: #111 !important;
+  }
+}
