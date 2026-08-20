@@ -544,9 +544,18 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
+  const [dragActive, setDragActive] = useState(false);
   const imageUrlsRef = useRef(baseline.image_urls);
   imageUrlsRef.current = form.image_urls;
   const fileInputRef = useRef(null);
+  const formErrorRef = useRef(null);
+
+  useEffect(() => {
+    if (formError) {
+      formErrorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [formError]);
 
   useEffect(() => {
     setForm(baseline);
@@ -710,20 +719,34 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
     const toUpload = files.slice(0, slots);
     setUploading(true);
     setFormError("");
-    try {
-      const uploaded = [];
-      for (const file of toUpload) {
-        uploaded.push(await uploadImageFile(file));
+    setUploadProgress({ done: 0, total: toUpload.length });
+
+    const failures = [];
+    for (const file of toUpload) {
+      try {
+        const url = await uploadImageFile(file);
+        // Append as each file finishes so a later failure in the batch
+        // never discards images that already uploaded successfully.
+        appendImageUrls([url]);
+      } catch (err) {
+        failures.push({ name: file.name, message: err?.message || t("scenarioForm.uploadFailed") });
       }
-      appendImageUrls(uploaded);
-      if (files.length > slots) {
-        setFormError(t("scenarioForm.maxImages", { max: MAX_SCENARIO_IMAGES }));
-      }
-    } catch (err) {
-      setFormError(err?.message || t("scenarioForm.uploadFailed"));
-    } finally {
-      setUploading(false);
+      setUploadProgress((p) => (p ? { ...p, done: p.done + 1 } : p));
     }
+
+    setUploading(false);
+    setUploadProgress(null);
+
+    const messages = [];
+    if (failures.length) {
+      messages.push(
+        ...failures.map((f) => t("scenarioForm.uploadFileFailed", { name: f.name, message: f.message }))
+      );
+    }
+    if (files.length > slots) {
+      messages.push(t("scenarioForm.maxImages", { max: MAX_SCENARIO_IMAGES }));
+    }
+    if (messages.length) setFormError(messages.join(" — "));
   };
 
   const handleAddUrl = () => {
@@ -798,7 +821,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       </h2>
 
       {formError ? (
-        <div id="scenario-form-error" style={styles.formInlineError} role="alert">
+        <div id="scenario-form-error" ref={formErrorRef} style={styles.formInlineError} role="alert">
           {formError}
         </div>
       ) : null}
@@ -1060,65 +1083,93 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         </button>
       </div>
       <div
+        onDragOver={(e) => {
+          if (busy || uploading || atImageCap) return;
+          e.preventDefault();
+          setDragActive(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget)) return;
+          setDragActive(false);
+        }}
+        onDrop={async (e) => {
+          e.preventDefault();
+          setDragActive(false);
+          if (busy || uploading || atImageCap) return;
+          await handleUploadFiles(e.dataTransfer.files);
+        }}
         style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "0.5rem",
-          marginTop: "0.5rem",
-          alignItems: "center",
-          position: "relative",
+          borderRadius: 10,
+          border: dragActive ? "2px dashed #4fa3ff" : "2px dashed transparent",
+          background: dragActive ? "rgba(79, 163, 255, 0.08)" : "transparent",
+          transition: "border-color 120ms ease, background 120ms ease",
+          padding: dragActive ? "0.5rem" : 0,
+          margin: dragActive ? "-0.5rem" : 0,
         }}
       >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
-          multiple
-          disabled={busy || uploading || atImageCap}
-          tabIndex={-1}
-          aria-hidden="true"
-          onChange={async (e) => {
-            const list = e.target.files;
-            e.target.value = "";
-            await handleUploadFiles(list);
-          }}
+        <div
           style={{
-            position: "absolute",
-            width: 1,
-            height: 1,
-            padding: 0,
-            margin: -1,
-            overflow: "hidden",
-            clip: "rect(0, 0, 0, 0)",
-            whiteSpace: "nowrap",
-            border: 0,
-            opacity: 0,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0.5rem",
+            marginTop: "0.5rem",
+            alignItems: "center",
+            position: "relative",
           }}
-        />
-        <button
-          type="button"
-          style={{
-            ...styles.ghostBtn,
-            cursor: busy || uploading || atImageCap ? "default" : "pointer",
-            opacity: atImageCap ? 0.55 : 1,
-          }}
-          disabled={busy || uploading || atImageCap}
-          onClick={() => fileInputRef.current?.click()}
         >
-          {uploading ? t("scenarioForm.uploading") : t("scenarioForm.uploadImages")}
-        </button>
-        <span style={{ color: "#8899aa", fontSize: "0.85rem" }}>
-          {t("scenarioForm.imageCount", {
-            count: form.image_urls.length,
-            max: MAX_SCENARIO_IMAGES,
-          })}
-        </span>
-      </div>
-      {form.image_urls.length === 0 ? (
-        <p style={{ color: "#8899aa", fontSize: "0.85rem", marginTop: "0.5rem" }}>
-          {t("admin.noImagesYet")}
-        </p>
-      ) : (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
+            multiple
+            disabled={busy || uploading || atImageCap}
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={async (e) => {
+              const list = e.target.files;
+              e.target.value = "";
+              await handleUploadFiles(list);
+            }}
+            style={{
+              position: "absolute",
+              width: 1,
+              height: 1,
+              padding: 0,
+              margin: -1,
+              overflow: "hidden",
+              clip: "rect(0, 0, 0, 0)",
+              whiteSpace: "nowrap",
+              border: 0,
+              opacity: 0,
+            }}
+          />
+          <button
+            type="button"
+            style={{
+              ...styles.ghostBtn,
+              cursor: busy || uploading || atImageCap ? "default" : "pointer",
+              opacity: atImageCap ? 0.55 : 1,
+            }}
+            disabled={busy || uploading || atImageCap}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {uploadProgress
+              ? t("scenarioForm.uploadProgress", uploadProgress)
+              : t("scenarioForm.uploadImages")}
+          </button>
+          <span style={{ color: "#8899aa", fontSize: "0.85rem" }}>
+            {t("scenarioForm.imageCount", {
+              count: form.image_urls.length,
+              max: MAX_SCENARIO_IMAGES,
+            })}
+          </span>
+          <span style={{ color: "#5c7186", fontSize: "0.8rem" }}>{t("scenarioForm.dropHint")}</span>
+        </div>
+        {form.image_urls.length === 0 ? (
+          <p style={{ color: "#8899aa", fontSize: "0.85rem", marginTop: "0.5rem" }}>
+            {t("admin.noImagesYet")}
+          </p>
+        ) : (
         <div
           style={{
             display: "grid",
@@ -1219,7 +1270,8 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
             </div>
           ))}
         </div>
-      )}
+        )}
+      </div>
 
       <label style={styles.label}>{t("scenarioForm.confluencePage")}</label>
       <ConfluencePagePicker

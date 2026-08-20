@@ -1,5 +1,13 @@
 {
-  "v": 2,
-  "categories": [],
+  "v": 3,
+  "categories": [
+    {
+      "slug": "test_category",
+      "label": "Test Category",
+      "sort_order": 1,
+      "wps": []
+    }
+  ],
+  "workPackages": [],
   "scenarios": []
 }
