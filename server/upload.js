@@ -127,6 +127,21 @@ export async function saveUploadedImage(file) {
 
     const { data } = sb.storage.from(BUCKET).getPublicUrl(objectPath);
     if (!data?.publicUrl) throw new Error("Could not resolve public URL");
+
+    // The bucket can report itself as public while anonymous reads still 403
+    // (missing/dropped storage.objects SELECT policy) — catch that here instead
+    // of silently handing back a URL that will fail to load in the browser.
+    const verifyRes = await withTimeout(
+      fetch(data.publicUrl, { method: "HEAD" }).catch(() => null),
+      8_000,
+      "verify-timeout"
+    ).catch(() => null);
+    if (verifyRes && (verifyRes.status === 401 || verifyRes.status === 403)) {
+      throw new Error(
+        "Image uploaded, but the storage bucket isn't publicly readable yet. Run the SQL in supabase/STORAGE.md to add the public-read policy for 'scenario-images', then try again."
+      );
+    }
+
     return data.publicUrl;
   }
 

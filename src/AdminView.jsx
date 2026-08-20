@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Navigate, useBlocker, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { apiFetchWithAuth, logoutAdmin, uploadImageFile } from "./api.js";
@@ -546,10 +546,21 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [dragActive, setDragActive] = useState(false);
+  const [confirmRemoveIndex, setConfirmRemoveIndex] = useState(null);
   const imageUrlsRef = useRef(baseline.image_urls);
   imageUrlsRef.current = form.image_urls;
-  const fileInputRef = useRef(null);
+  const fileInputId = useId();
   const formErrorRef = useRef(null);
+  const sectionRefs = {
+    basics: useRef(null),
+    content: useRef(null),
+    images: useRef(null),
+    links: useRef(null),
+    publish: useRef(null),
+  };
+  const jumpToSection = (key) => {
+    sectionRefs[key].current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   useEffect(() => {
     if (formError) {
@@ -561,6 +572,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
     setForm(baseline);
     setUrlDraft("");
     setFormError("");
+    setConfirmRemoveIndex(null);
     const filled = SUPPORTED_SCENARIO_LOCALES.filter((l) => slotHasContent(baseline.translations[l]));
     const nextEnabled = filled.length
       ? filled
@@ -677,6 +689,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
 
   const removeImageAt = (index) => {
     setFormError("");
+    setConfirmRemoveIndex(null);
     setForm((f) => ({
       ...f,
       image_urls: f.image_urls.filter((_, i) => i !== index),
@@ -820,12 +833,53 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         {initial ? t("scenarioForm.editTitle") : t("scenarioForm.addTitle")}
       </h2>
 
+      <nav
+        aria-label={t("scenarioForm.jumpNav")}
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 5,
+          display: "flex",
+          flexWrap: "nowrap",
+          overflowX: "auto",
+          gap: "0.4rem",
+          background: "#0d1520",
+          borderBottom: "1px solid #1a2a3a",
+          padding: "0.6rem 0",
+          marginBottom: "1rem",
+        }}
+      >
+        {[
+          ["basics", "scenarioForm.sectionBasics"],
+          ["content", "scenarioForm.sectionContent"],
+          ["images", "scenarioForm.sectionImages"],
+          ["links", "scenarioForm.sectionLinks"],
+          ["publish", "scenarioForm.sectionPublish"],
+        ].map(([key, labelKey]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => jumpToSection(key)}
+            style={{
+              ...styles.ghostBtn,
+              padding: "0.35rem 0.75rem",
+              fontSize: "0.8rem",
+              whiteSpace: "nowrap",
+              flex: "none",
+            }}
+          >
+            {t(labelKey)}
+          </button>
+        ))}
+      </nav>
+
       {formError ? (
         <div id="scenario-form-error" ref={formErrorRef} style={styles.formInlineError} role="alert">
           {formError}
         </div>
       ) : null}
 
+      <div ref={sectionRefs.basics} style={{ scrollMarginTop: "3.5rem" }}>
       <label style={styles.label}>{t("scenarioForm.category")}</label>
       <select
         style={styles.select}
@@ -858,7 +912,9 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           </option>
         ))}
       </select>
+      </div>
 
+      <div ref={sectionRefs.content} style={{ scrollMarginTop: "3.5rem" }}>
       <label style={styles.label}>{t("scenarioForm.languagesLabel")}</label>
       <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>
         {t("scenarioForm.languagesHelp")}
@@ -1057,7 +1113,9 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         disabled={busy || uploading}
         onChange={(e) => patchLang(activeLang, "tags", e.target.value)}
       />
+      </div>
 
+      <div ref={sectionRefs.images} style={{ scrollMarginTop: "3.5rem" }}>
       <label style={styles.label}>{t("scenarioForm.images")}</label>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
         <input
@@ -1118,13 +1176,11 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           }}
         >
           <input
-            ref={fileInputRef}
+            id={fileInputId}
             type="file"
             accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
             multiple
             disabled={busy || uploading || atImageCap}
-            tabIndex={-1}
-            aria-hidden="true"
             onChange={async (e) => {
               const list = e.target.files;
               e.target.value = "";
@@ -1140,23 +1196,21 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
               clip: "rect(0, 0, 0, 0)",
               whiteSpace: "nowrap",
               border: 0,
-              opacity: 0,
             }}
           />
-          <button
-            type="button"
+          <label
+            htmlFor={fileInputId}
             style={{
               ...styles.ghostBtn,
               cursor: busy || uploading || atImageCap ? "default" : "pointer",
-              opacity: atImageCap ? 0.55 : 1,
+              opacity: busy || uploading || atImageCap ? 0.55 : 1,
+              pointerEvents: busy || uploading || atImageCap ? "none" : "auto",
             }}
-            disabled={busy || uploading || atImageCap}
-            onClick={() => fileInputRef.current?.click()}
           >
             {uploadProgress
               ? t("scenarioForm.uploadProgress", uploadProgress)
               : t("scenarioForm.uploadImages")}
-          </button>
+          </label>
           <span style={{ color: "#8899aa", fontSize: "0.85rem" }}>
             {t("scenarioForm.imageCount", {
               count: form.image_urls.length,
@@ -1165,6 +1219,9 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           </span>
           <span style={{ color: "#5c7186", fontSize: "0.8rem" }}>{t("scenarioForm.dropHint")}</span>
         </div>
+        <p style={{ color: "#5c7186", fontSize: "0.78rem", marginTop: "0.35rem", marginBottom: 0 }}>
+          {t("scenarioForm.uploadHint")}
+        </p>
         {form.image_urls.length === 0 ? (
           <p style={{ color: "#8899aa", fontSize: "0.85rem", marginTop: "0.5rem" }}>
             {t("admin.noImagesYet")}
@@ -1252,27 +1309,53 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
                   {t("scenarioForm.setCover")}
                 </button>
               ) : null}
-              <button
-                type="button"
-                style={{
-                  ...styles.cancelBtn,
-                  width: "100%",
-                  borderRadius: 0,
-                  marginTop: 0,
-                  fontSize: "0.75rem",
-                  padding: "0.35rem",
-                }}
-                disabled={busy || uploading}
-                onClick={() => removeImageAt(index)}
-              >
-                {t("scenarioForm.removeImage")}
-              </button>
+              {confirmRemoveIndex === index ? (
+                <div style={{ padding: "0.35rem", background: "rgba(192, 57, 43, 0.12)" }}>
+                  <p style={{ color: "#ff6b6b", fontSize: "0.72rem", margin: "0 0 0.35rem" }}>
+                    {t("scenarioForm.removeImageConfirm")}
+                  </p>
+                  <div style={{ display: "flex", gap: "0.35rem" }}>
+                    <button
+                      type="button"
+                      style={{ ...styles.dangerBtn, flex: 1, fontSize: "0.72rem", padding: "0.3rem" }}
+                      onClick={() => removeImageAt(index)}
+                    >
+                      {t("scenarioForm.yesRemove")}
+                    </button>
+                    <button
+                      type="button"
+                      style={{ ...styles.cancelBtn, flex: 1, fontSize: "0.72rem", padding: "0.3rem" }}
+                      onClick={() => setConfirmRemoveIndex(null)}
+                    >
+                      {t("scenarioForm.cancel")}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  style={{
+                    ...styles.cancelBtn,
+                    width: "100%",
+                    borderRadius: 0,
+                    marginTop: 0,
+                    fontSize: "0.75rem",
+                    padding: "0.35rem",
+                  }}
+                  disabled={busy || uploading}
+                  onClick={() => setConfirmRemoveIndex(index)}
+                >
+                  {t("scenarioForm.removeImage")}
+                </button>
+              )}
             </div>
           ))}
         </div>
         )}
       </div>
+      </div>
 
+      <div ref={sectionRefs.links} style={{ scrollMarginTop: "3.5rem" }}>
       <label style={styles.label}>{t("scenarioForm.confluencePage")}</label>
       <ConfluencePagePicker
         value={{
@@ -1299,7 +1382,9 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           }));
         }}
       />
+      </div>
 
+      <div ref={sectionRefs.publish} style={{ scrollMarginTop: "3.5rem" }}>
       <label style={styles.checkLabel}>
         <input
           type="checkbox"
@@ -1321,6 +1406,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         <button type="button" style={styles.ghostBtn} onClick={requestCancel} disabled={busy || uploading}>
           {t("scenarioForm.cancel")}
         </button>
+      </div>
       </div>
     </div>
   );
