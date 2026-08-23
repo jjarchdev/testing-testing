@@ -1182,9 +1182,15 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
             multiple
             disabled={busy || uploading || atImageCap}
             onChange={async (e) => {
-              const list = e.target.files;
+              // Extract the actual File objects into a plain array before
+              // touching e.target.value: in Chrome, clearing the input's
+              // value empties the SAME FileList object in place (rather than
+              // replacing it with a fresh one, as Firefox does), so a
+              // reference captured beforehand ends up empty by the time it's
+              // read — the upload silently sees zero files and does nothing.
+              const files = Array.from(e.target.files || []);
               e.target.value = "";
-              await handleUploadFiles(list);
+              await handleUploadFiles(files);
             }}
             style={{
               position: "absolute",
