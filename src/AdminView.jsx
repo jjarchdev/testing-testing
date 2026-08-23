@@ -5,8 +5,6 @@ import { apiFetchWithAuth, logoutAdmin, uploadImageFile } from "./api.js";
 import { useAppData } from "./AppData.jsx";
 import LanguageSwitcher from "./LanguageSwitcher.jsx";
 import AdminsPanel from "./AdminsPanel.jsx";
-import ConfluenceManager from "./ConfluenceManager.jsx";
-import ConfluencePagePicker from "./ConfluencePagePicker.jsx";
 import { localePath, formatCategoryLabel } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
 import { styles } from "./styles.js";
@@ -555,7 +553,6 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
     basics: useRef(null),
     content: useRef(null),
     images: useRef(null),
-    links: useRef(null),
     publish: useRef(null),
   };
   const jumpToSection = (key) => {
@@ -853,7 +850,6 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           ["basics", "scenarioForm.sectionBasics"],
           ["content", "scenarioForm.sectionContent"],
           ["images", "scenarioForm.sectionImages"],
-          ["links", "scenarioForm.sectionLinks"],
           ["publish", "scenarioForm.sectionPublish"],
         ].map(([key, labelKey]) => (
           <button
@@ -1361,35 +1357,6 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       </div>
       </div>
 
-      <div ref={sectionRefs.links} style={{ scrollMarginTop: "3.5rem" }}>
-      <label style={styles.label}>{t("scenarioForm.confluencePage")}</label>
-      <ConfluencePagePicker
-        value={{
-          id: form.confluence_page_id,
-          url: form.confluence_page_url,
-          title: form.confluence_page_title,
-        }}
-        onPick={(picked) => {
-          setFormError("");
-          setForm((f) => ({
-            ...f,
-            confluence_page_id: picked.id || "",
-            confluence_page_url: picked.url || "",
-            confluence_page_title: picked.title || "",
-          }));
-        }}
-        onClear={() => {
-          setFormError("");
-          setForm((f) => ({
-            ...f,
-            confluence_page_id: "",
-            confluence_page_url: "",
-            confluence_page_title: "",
-          }));
-        }}
-      />
-      </div>
-
       <div ref={sectionRefs.publish} style={{ scrollMarginTop: "3.5rem" }}>
       <label style={styles.checkLabel}>
         <input
@@ -1441,17 +1408,36 @@ export default function AdminView() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [showWorkPackageManager, setShowWorkPackageManager] = useState(false);
-  const [showConfluenceManager, setShowConfluenceManager] = useState(false);
   const [showAdminsPanel, setShowAdminsPanel] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const narrow = useIsNarrow();
   const [navOpen, setNavOpen] = useState(false);
+  const [scenarioQuery, setScenarioQuery] = useState("");
+  const [scenarioStatusFilter, setScenarioStatusFilter] = useState("all");
 
   const scenarioList = scenarios ?? [];
   const categoryList = categories || [];
   const workPackageList = workPackages || [];
   const listLoading = scenarios === null || categories === null || workPackages === null;
   const distinctCategoryCount = categoryList.length;
+
+  const filteredScenarios = useMemo(() => {
+    const q = scenarioQuery.trim().toLowerCase();
+    return scenarioList.filter((row) => {
+      if (scenarioStatusFilter === "published" && row.is_published === false) return false;
+      if (scenarioStatusFilter === "draft" && row.is_published !== false) return false;
+      if (!q) return true;
+      const haystack = [
+        row.title,
+        formatCategoryLabel(row.category, row.category_wps),
+        VERDICT_CODES.includes(row.verdict) ? t(`verdict.${row.verdict}`) : "",
+        ...(Array.isArray(row.tags) ? row.tags : []),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [scenarioList, scenarioQuery, scenarioStatusFilter, t]);
 
   useEffect(() => {
     if (!narrow) setNavOpen(false);
@@ -1460,7 +1446,7 @@ export default function AdminView() {
   useEffect(() => {
     const main = document.getElementById("admin-main");
     if (main) main.scrollTop = 0;
-  }, [showAddForm, showCategoryManager, showWorkPackageManager, showConfluenceManager, showAdminsPanel, editingScenario, listLoading]);
+  }, [showAddForm, showCategoryManager, showWorkPackageManager, showAdminsPanel, editingScenario, listLoading]);
 
   useEffect(() => {
     if (scenarios == null) return;
@@ -1709,7 +1695,6 @@ export default function AdminView() {
     setEditingScenario(null);
     setShowCategoryManager(false);
     setShowWorkPackageManager(false);
-    setShowConfluenceManager(false);
     setShowAdminsPanel(false);
     loadScenariosFromServer();
     navigate(localePath(lng));
@@ -1766,6 +1751,7 @@ export default function AdminView() {
             <div style={styles.statLabel}>{t("admin.categories")}</div>
           </div>
         </div>
+        <div style={{ ...styles.sidebarSectionLabel, marginTop: 0 }}>{t("admin.navContent")}</div>
         <button
           type="button"
           style={{ ...styles.primaryBtn, margin: "0 1rem 0.5rem" }}
@@ -1774,7 +1760,6 @@ export default function AdminView() {
             setEditingScenario(null);
             setShowCategoryManager(false);
             setShowWorkPackageManager(false);
-            setShowConfluenceManager(false);
             setShowAdminsPanel(false);
             setNavOpen(false);
           }}
@@ -1788,7 +1773,6 @@ export default function AdminView() {
             setShowCategoryManager(true);
             setShowWorkPackageManager(false);
             setShowAddForm(false);
-            setShowConfluenceManager(false);
             setShowAdminsPanel(false);
             setEditingScenario(null);
             setNavOpen(false);
@@ -1803,7 +1787,6 @@ export default function AdminView() {
             setShowWorkPackageManager(true);
             setShowCategoryManager(false);
             setShowAddForm(false);
-            setShowConfluenceManager(false);
             setShowAdminsPanel(false);
             setEditingScenario(null);
             setNavOpen(false);
@@ -1811,27 +1794,12 @@ export default function AdminView() {
         >
           {t("admin.manageWps")}
         </button>
-        <button
-          type="button"
-          style={{ ...styles.ghostBtn, margin: "0 1rem 0.5rem", justifyContent: "center" }}
-          onClick={() => {
-            setShowConfluenceManager(true);
-            setShowCategoryManager(false);
-            setShowWorkPackageManager(false);
-            setShowAdminsPanel(false);
-            setShowAddForm(false);
-            setEditingScenario(null);
-            setNavOpen(false);
-          }}
-        >
-          {t("admin.manageConfluence")}
-        </button>
+        <div style={styles.sidebarSectionLabel}>{t("admin.navSettings")}</div>
         <button
           type="button"
           style={{ ...styles.ghostBtn, margin: "0 1rem 0.5rem", justifyContent: "center" }}
           onClick={() => {
             setShowAdminsPanel(true);
-            setShowConfluenceManager(false);
             setShowCategoryManager(false);
             setShowWorkPackageManager(false);
             setShowAddForm(false);
@@ -1896,13 +1864,6 @@ export default function AdminView() {
             currentEmail={adminEmail}
             onBack={() => setShowAdminsPanel(false)}
           />
-        ) : showConfluenceManager ? (
-          <ConfluenceManager
-            onBack={() => setShowConfluenceManager(false)}
-            onChanged={() => {
-              loadScenariosFromServer();
-            }}
-          />
         ) : showWorkPackageManager ? (
           <WorkPackageManager
             workPackages={workPackageList}
@@ -1937,7 +1898,12 @@ export default function AdminView() {
             <div style={styles.mainHeader}>
               <h2 style={styles.mainTitle}>{t("admin.manageScenarios")}</h2>
               <span style={styles.mainCount}>
-                {t("admin.entriesCount", { count: scenarioList.length })}
+                {scenarioQuery.trim() || scenarioStatusFilter !== "all"
+                  ? t("admin.entriesFilteredCount", {
+                      count: filteredScenarios.length,
+                      total: scenarioList.length,
+                    })
+                  : t("admin.entriesCount", { count: scenarioList.length })}
               </span>
             </div>
             {categoryList.length === 0 ? (
@@ -1965,10 +1931,45 @@ export default function AdminView() {
                   {t("admin.noScenariosCta")}
                 </button>
               </div>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
+                <input
+                  style={{ ...styles.searchInput, margin: 0, flex: "1 1 220px" }}
+                  placeholder={t("admin.searchPlaceholder")}
+                  value={scenarioQuery}
+                  onChange={(e) => setScenarioQuery(e.target.value)}
+                  aria-label={t("admin.searchPlaceholder")}
+                />
+                <select
+                  style={{ ...styles.select, marginBottom: 0, width: "auto", flex: "0 0 auto" }}
+                  value={scenarioStatusFilter}
+                  onChange={(e) => setScenarioStatusFilter(e.target.value)}
+                  aria-label={t("admin.colStatus")}
+                >
+                  <option value="all">{t("admin.filterAll")}</option>
+                  <option value="published">{t("admin.live")}</option>
+                  <option value="draft">{t("admin.draft")}</option>
+                </select>
+              </div>
+            )}
+            {scenarioList.length > 0 && filteredScenarios.length === 0 ? (
+              <div style={styles.empty}>
+                <div>{t("admin.noResultsMatch")}</div>
+                <button
+                  type="button"
+                  style={{ ...styles.ghostBtn, marginTop: "0.75rem" }}
+                  onClick={() => {
+                    setScenarioQuery("");
+                    setScenarioStatusFilter("all");
+                  }}
+                >
+                  {t("admin.clearFilters")}
+                </button>
+              </div>
             ) : null}
             <div style={styles.adminTableWrap}>
             <div style={styles.adminTable}>
-              {scenarioList.length > 0 ? (
+              {filteredScenarios.length > 0 ? (
                 <div style={styles.tableHead}>
                   <span style={{ flex: 2 }}>{t("admin.colTitle")}</span>
                   <span style={{ flex: 1 }}>{t("admin.colCategory")}</span>
@@ -1977,7 +1978,7 @@ export default function AdminView() {
                   <span style={{ flex: 1, textAlign: "right" }}>{t("admin.colActions")}</span>
                 </div>
               ) : null}
-              {scenarioList.map((row) => (
+              {filteredScenarios.map((row) => (
                 <div key={row.id} style={styles.tableRow}>
                   {deleteConfirm === row.id ? (
                     <div style={styles.deleteConfirm}>
@@ -2025,7 +2026,6 @@ export default function AdminView() {
                             setShowAddForm(false);
                             setShowCategoryManager(false);
                             setShowWorkPackageManager(false);
-                            setShowConfluenceManager(false);
                             setShowAdminsPanel(false);
                           }}
                         >

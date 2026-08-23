@@ -335,6 +335,14 @@ export const styles = {
   },
   sidebarTitle: { fontWeight: 700, fontSize: "1rem", lineHeight: 1.2, color: "#eaf0fb" },
   sidebarSub: { fontSize: "0.75rem", color: "#4fa3ff" },
+  sidebarSectionLabel: {
+    fontSize: "0.68rem",
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    color: "#5c7186",
+    margin: "1rem 1rem 0.4rem",
+  },
   searchInput: {
     margin: "0 1rem 1rem",
     background: "#111e2c",
