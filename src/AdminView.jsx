@@ -833,9 +833,6 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       <nav
         aria-label={t("scenarioForm.jumpNav")}
         style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 5,
           display: "flex",
           flexWrap: "nowrap",
           overflowX: "auto",
@@ -875,7 +872,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         </div>
       ) : null}
 
-      <div ref={sectionRefs.basics} style={{ scrollMarginTop: "3.5rem" }}>
+      <div ref={sectionRefs.basics}>
       <label style={styles.label}>{t("scenarioForm.category")}</label>
       <select
         style={styles.select}
@@ -910,7 +907,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       </select>
       </div>
 
-      <div ref={sectionRefs.content} style={{ scrollMarginTop: "3.5rem" }}>
+      <div ref={sectionRefs.content}>
       <label style={styles.label}>{t("scenarioForm.languagesLabel")}</label>
       <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>
         {t("scenarioForm.languagesHelp")}
@@ -1111,7 +1108,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       />
       </div>
 
-      <div ref={sectionRefs.images} style={{ scrollMarginTop: "3.5rem" }}>
+      <div ref={sectionRefs.images}>
       <label style={styles.label}>{t("scenarioForm.images")}</label>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
         <input
@@ -1357,7 +1354,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       </div>
       </div>
 
-      <div ref={sectionRefs.publish} style={{ scrollMarginTop: "3.5rem" }}>
+      <div ref={sectionRefs.publish}>
       <label style={styles.checkLabel}>
         <input
           type="checkbox"
