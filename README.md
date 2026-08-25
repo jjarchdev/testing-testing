@@ -2,7 +2,7 @@
 
 A quality-management procedure playbook for teams that need clear, searchable answers to recurring situations.
 
-Employees open the app, find the scenario that matches what they’re dealing with, and follow the documented solution. Admins own the content — categories, procedures, publish state — without shipping a code change.
+Employees open the app, find the scenario that matches what they’re dealing with, and follow the documented solution. Admins own the content — categories, procedures, publish state.
 
 ---
 
@@ -13,7 +13,7 @@ Employees open the app, find the scenario that matches what they’re dealing wi
 | **Employees** | Browse published scenarios by category, search by title/tags/text, open a procedure and follow it |
 | **Admins** | Sign in, manage categories, draft or publish scenarios, keep the playbook current |
 
-Fresh installs start empty. The playbook is whatever your team writes.
+
 
 ---
 
@@ -37,6 +37,3 @@ Browser  →  Express (React SPA + /api)  →  Supabase Postgres
 - **Backend** — Express on the same origin (SPA + API together)
 - **Data** — Supabase Postgres in production; optional local file store for quick dev
 - **Auth** — Shared admin password; session in an httpOnly cookie (not `sessionStorage`)
-
-Designed to run as **one Render web service**. Data persists in Supabase across deploys.
-
