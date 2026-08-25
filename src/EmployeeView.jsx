@@ -48,7 +48,7 @@ function parseSolutionBlocks(solution) {
   const text = String(solution || "").replace(/\r\n?/g, "\n");
   if (!text.trim()) return [];
   const lines = text.split("\n");
-  const NUM_RE = /^\s*(\d+)\.\s+(.+)$/;
+  const NUM_RE = /^\s*(\d+)\.\s*(.+)$/;
   const blocks = [];
   let paraBuf = [];
 
@@ -80,6 +80,13 @@ function parseSolutionBlocks(solution) {
     if (m) {
       const run = [];
       while (i < lines.length) {
+        if (lines[i].trim() === "") {
+          if (i + 1 < lines.length && NUM_RE.test(lines[i + 1])) {
+            i += 1;
+            continue;
+          }
+          break;
+        }
         const nm = lines[i].match(NUM_RE);
         if (!nm) break;
         run.push({
