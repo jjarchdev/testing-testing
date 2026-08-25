@@ -558,6 +558,7 @@ export const styles = {
     border: "1px solid #1a2a3a",
     borderRadius: 10,
     padding: "0.85rem 1rem",
+    minWidth: 0,
   },
   stepNum: {
     background: "#1a6bd2",
@@ -572,7 +573,15 @@ export const styles = {
     fontWeight: 700,
     flexShrink: 0,
   },
-  stepText: { flex: 1, color: "#eaf0fb", fontSize: "0.95rem", lineHeight: 1.5 },
+  stepText: {
+    flex: 1,
+    minWidth: 0,
+    color: "#eaf0fb",
+    fontSize: "0.95rem",
+    lineHeight: 1.5,
+    overflowWrap: "break-word",
+    wordBreak: "break-word",
+  },
   detailTags: { display: "flex", gap: "0.5rem", flexWrap: "wrap" },
   tagLarge: {
     background: "rgba(79, 163, 255, 0.12)",

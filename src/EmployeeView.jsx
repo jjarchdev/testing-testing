@@ -668,16 +668,23 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp, i
               <img
                 src={images[lightboxIndex]}
                 alt={imageCaptions[images[lightboxIndex]] || ""}
-                style={{
-                  maxWidth: "min(96vw, 1200px)",
-                  maxHeight: "78vh",
-                  objectFit: "contain",
-                  borderRadius: 8,
-                  cursor: "default",
-                  transform: `scale(${zoom})`,
-                  transformOrigin: "center center",
-                  transition: "transform 120ms ease",
-                }}
+                style={
+                  zoom > 1
+                    ? {
+                        width: `calc(min(96vw, 1200px) * ${zoom})`,
+                        maxWidth: "none",
+                        maxHeight: "none",
+                        borderRadius: 8,
+                        cursor: "default",
+                      }
+                    : {
+                        maxWidth: "min(96vw, 1200px)",
+                        maxHeight: "78vh",
+                        objectFit: "contain",
+                        borderRadius: 8,
+                        cursor: "default",
+                      }
+                }
               />
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
