@@ -9,9 +9,16 @@ import {
 import {
   normalizeScenario,
   sanitizeImageUrls,
+  sanitizeImageCaptions,
   sanitizeTranslations,
   SUPPORTED_SCENARIO_LOCALES,
 } from "../shared/scenarioSchema.mjs";
+
+function isMissingColumnError(error) {
+  if (!error) return false;
+  if (error.code === "42703") return true;
+  return /column .* does not exist/i.test(String(error.message || ""));
+}
 
 function supabaseUrl() {
   return (process.env.SUPABASE_URL || "").trim();
@@ -84,6 +91,7 @@ export function rowToScenario(row) {
       tags: Array.isArray(row.tags) ? row.tags : [],
       image_urls,
       image_url: image_urls[0] || "",
+      image_captions: row.image_captions && typeof row.image_captions === "object" ? row.image_captions : {},
       translations: row.translations && typeof row.translations === "object" ? row.translations : {},
       confluence_page_id:
         typeof row.confluence_page_id === "string" ? row.confluence_page_id : "",
@@ -140,9 +148,11 @@ function scenarioImageFields(payload) {
         ? [legacy]
         : fromArray || [];
   const image_urls = sanitizeImageUrls(raw, { allowLocalUploads: false });
+  const image_captions = sanitizeImageCaptions(payload?.image_captions, image_urls);
   return {
     image_urls,
     image_url: image_urls[0] || null,
+    image_captions,
   };
 }
 
@@ -534,28 +544,32 @@ export async function insertScenario(payload) {
   const images = scenarioImageFields(payload);
   const translations = sanitizeTranslations(payload.translations);
   const primary = derivePrimaryFields(payload, translations);
-  const { data, error } = await sb
+  const row = {
+    category_slug,
+    title: primary.title.trim(),
+    situation: primary.scenario.trim(),
+    solution: primary.solution.trim(),
+    tags: primary.tags,
+    translations,
+    image_url: images.image_url,
+    image_urls: images.image_urls,
+    confluence_page_id: payload.confluence_page_id || null,
+    confluence_page_url: payload.confluence_page_url || null,
+    confluence_page_title: payload.confluence_page_title || null,
+    sort_order: payload.sort_order ?? 0,
+    is_published: payload.is_published !== false,
+    solution_as_checklist: payload.solution_as_checklist === true,
+    acceptance_as_checklist: payload.acceptance_as_checklist === true,
+    verdict: payload.verdict || null,
+  };
+  let { data, error } = await sb
     .from("scenarios")
-    .insert({
-      category_slug,
-      title: primary.title.trim(),
-      situation: primary.scenario.trim(),
-      solution: primary.solution.trim(),
-      tags: primary.tags,
-      translations,
-      image_url: images.image_url,
-      image_urls: images.image_urls,
-      confluence_page_id: payload.confluence_page_id || null,
-      confluence_page_url: payload.confluence_page_url || null,
-      confluence_page_title: payload.confluence_page_title || null,
-      sort_order: payload.sort_order ?? 0,
-      is_published: payload.is_published !== false,
-      solution_as_checklist: payload.solution_as_checklist === true,
-      acceptance_as_checklist: payload.acceptance_as_checklist === true,
-      verdict: payload.verdict || null,
-    })
+    .insert({ ...row, image_captions: images.image_captions })
     .select("id")
     .single();
+  if (error && isMissingColumnError(error)) {
+    ({ data, error } = await sb.from("scenarios").insert(row).select("id").single());
+  }
   if (error) throw error;
   return getScenarioById(data.id);
 }
@@ -589,7 +603,13 @@ export async function updateScenario(id, payload) {
   if (typeof payload.is_published === "boolean") {
     updates.is_published = payload.is_published;
   }
-  const { error } = await sb.from("scenarios").update(updates).eq("id", id);
+  let { error } = await sb
+    .from("scenarios")
+    .update({ ...updates, image_captions: images.image_captions })
+    .eq("id", id);
+  if (error && isMissingColumnError(error)) {
+    ({ error } = await sb.from("scenarios").update(updates).eq("id", id));
+  }
   if (error) throw error;
 
   const { removeStoredImages, urlsRemovedFromScenario } = await import("./upload.js");

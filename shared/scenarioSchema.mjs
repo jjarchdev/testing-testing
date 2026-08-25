@@ -81,6 +81,21 @@ export function sanitizeImageUrls(listOrSingle, options = {}) {
   return out;
 }
 
+const CAPTION_MAX_LEN = 200;
+
+export function sanitizeImageCaptions(raw, validUrls) {
+  const out = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const allowed = new Set(Array.isArray(validUrls) ? validUrls : []);
+  for (const [url, caption] of Object.entries(raw)) {
+    if (!allowed.has(url)) continue;
+    if (typeof caption !== "string") continue;
+    const trimmed = caption.trim().slice(0, CAPTION_MAX_LEN);
+    if (trimmed) out[url] = trimmed;
+  }
+  return out;
+}
+
 function collectRawImageInputs(s) {
   if (Array.isArray(s?.image_urls) && s.image_urls.length) return s.image_urls;
   if (typeof s?.image_url === "string" && s.image_url.trim()) return [s.image_url];
@@ -205,6 +220,7 @@ export function normalizeScenario(s, options = {}) {
     tags: s.tags.map((t) => String(t)),
     image_urls,
     image_url: image_urls[0] || "",
+    image_captions: sanitizeImageCaptions(s.image_captions, image_urls),
     translations,
     confluence_page_id: sanitizeConfluencePageId(s.confluence_page_id),
     confluence_page_url: sanitizeConfluenceUrl(s.confluence_page_url),

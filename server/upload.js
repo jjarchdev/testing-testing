@@ -128,9 +128,6 @@ export async function saveUploadedImage(file) {
     const { data } = sb.storage.from(BUCKET).getPublicUrl(objectPath);
     if (!data?.publicUrl) throw new Error("Could not resolve public URL");
 
-    // The bucket can report itself as public while anonymous reads still 403
-    // (missing/dropped storage.objects SELECT policy) — catch that here instead
-    // of silently handing back a URL that will fail to load in the browser.
     const verifyRes = await withTimeout(
       fetch(data.publicUrl, { method: "HEAD" }).catch(() => null),
       8_000,

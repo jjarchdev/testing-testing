@@ -5,6 +5,7 @@ import { apiFetchWithAuth, logoutAdmin, uploadImageFile } from "./api.js";
 import { useAppData } from "./AppData.jsx";
 import LanguageSwitcher from "./LanguageSwitcher.jsx";
 import AdminsPanel from "./AdminsPanel.jsx";
+import { ScenarioDetail } from "./EmployeeView.jsx";
 import { localePath, formatCategoryLabel } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
 import { styles } from "./styles.js";
@@ -81,6 +82,13 @@ function scenarioImageUrls(scenario) {
 function sameUrlList(a, b) {
   if (a.length !== b.length) return false;
   return a.every((url, i) => url === b[i]);
+}
+
+function sameCaptions(a, b) {
+  const aKeys = Object.keys(a || {});
+  const bKeys = Object.keys(b || {});
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((k) => a[k] === b?.[k]);
 }
 
 function CategoryManager({ categories, workPackages, onSave, onDelete, onBack, onManageWps }) {
@@ -508,6 +516,7 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onBack }) {
 
 function ScenarioForm({ initial, categories, onSave, onCancel }) {
   const { t, i18n } = useTranslation();
+  const { notify } = useAppData();
   const narrow = useIsNarrow();
   const defaultCategory = categories[0]?.label || "";
   const baseline = useMemo(
@@ -515,6 +524,10 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       category: initial?.category || defaultCategory,
       translations: extractTranslations(initial),
       image_urls: scenarioImageUrls(initial),
+      image_captions:
+        initial?.image_captions && typeof initial.image_captions === "object"
+          ? initial.image_captions
+          : {},
       confluence_page_id: initial?.confluence_page_id || "",
       confluence_page_url: initial?.confluence_page_url || "",
       confluence_page_title: initial?.confluence_page_title || "",
@@ -545,6 +558,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
   const [uploadProgress, setUploadProgress] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [confirmRemoveIndex, setConfirmRemoveIndex] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
   const imageUrlsRef = useRef(baseline.image_urls);
   imageUrlsRef.current = form.image_urls;
   const fileInputId = useId();
@@ -609,6 +623,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       form.category !== baseline.category ||
       !translationsEqual(form.translations, baseline.translations) ||
       !sameUrlList(form.image_urls, baseline.image_urls) ||
+      !sameCaptions(form.image_captions, baseline.image_captions) ||
       form.confluence_page_id !== baseline.confluence_page_id ||
       form.confluence_page_url !== baseline.confluence_page_url ||
       form.confluence_page_title !== baseline.confluence_page_title ||
@@ -687,9 +702,22 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
   const removeImageAt = (index) => {
     setFormError("");
     setConfirmRemoveIndex(null);
+    setForm((f) => {
+      const removedUrl = f.image_urls[index];
+      const nextCaptions = { ...f.image_captions };
+      delete nextCaptions[removedUrl];
+      return {
+        ...f,
+        image_urls: f.image_urls.filter((_, i) => i !== index),
+        image_captions: nextCaptions,
+      };
+    });
+  };
+
+  const patchCaption = (url, caption) => {
     setForm((f) => ({
       ...f,
-      image_urls: f.image_urls.filter((_, i) => i !== index),
+      image_captions: { ...f.image_captions, [url]: caption },
     }));
   };
 
@@ -735,8 +763,6 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
     for (const file of toUpload) {
       try {
         const url = await uploadImageFile(file);
-        // Append as each file finishes so a later failure in the batch
-        // never discards images that already uploaded successfully.
         appendImageUrls([url]);
       } catch (err) {
         failures.push({ name: file.name, message: err?.message || t("scenarioForm.uploadFailed") });
@@ -809,6 +835,7 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
         translations: translationsToApi(translationsForSave),
         primary_language: complete.includes(activeLang) ? activeLang : complete[0],
         image_urls: form.image_urls,
+        image_captions: form.image_captions,
         confluence_page_id: form.confluence_page_id,
         confluence_page_url: form.confluence_page_url,
         confluence_page_title: form.confluence_page_title,
@@ -823,6 +850,49 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
   };
 
   const LANG_LABELS = { en: "English", de: "Deutsch", sq: "Shqip" };
+
+  const previewCategoryWp = useMemo(() => {
+    const cat = categories.find((c) => c.label === form.category);
+    return Array.isArray(cat?.wps) ? cat.wps : [];
+  }, [categories, form.category]);
+
+  const previewScenario = useMemo(
+    () => ({
+      id: initial?.id ?? "preview",
+      category: form.category,
+      verdict: form.verdict,
+      tags: [],
+      image_urls: form.image_urls,
+      image_captions: form.image_captions,
+      solution_as_checklist: form.solution_as_checklist,
+      acceptance_as_checklist: form.acceptance_as_checklist,
+      confluence_page_id: "",
+      confluence_page_url: "",
+      confluence_page_title: "",
+    }),
+    [
+      initial?.id,
+      form.category,
+      form.verdict,
+      form.image_urls,
+      form.image_captions,
+      form.solution_as_checklist,
+      form.acceptance_as_checklist,
+    ]
+  );
+
+  const previewView = useMemo(() => {
+    const api = translationsToApi(form.translations);
+    return (
+      api[activeLang] || {
+        title: "",
+        scenario: "",
+        solution: "",
+        acceptance: "",
+        tags: [],
+      }
+    );
+  }, [form.translations, activeLang]);
 
   return (
     <div style={{ ...styles.formWrap, maxWidth: narrow ? 680 : 1100 }}>
@@ -1175,12 +1245,6 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
             multiple
             disabled={busy || uploading || atImageCap}
             onChange={async (e) => {
-              // Extract the actual File objects into a plain array before
-              // touching e.target.value: in Chrome, clearing the input's
-              // value empties the SAME FileList object in place (rather than
-              // replacing it with a fresh one, as Firefox does), so a
-              // reference captured beforehand ends up empty by the time it's
-              // read — the upload silently sees zero files and does nothing.
               const files = Array.from(e.target.files || []);
               e.target.value = "";
               await handleUploadFiles(files);
@@ -1276,6 +1340,25 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
                   {t("scenarioForm.coverBadge")}
                 </div>
               ) : null}
+              <input
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  background: "#111e2c",
+                  border: "none",
+                  borderTop: "1px solid #1a2a3a",
+                  color: "#eaf0fb",
+                  fontSize: "0.72rem",
+                  padding: "0.35rem 0.5rem",
+                  fontFamily: "inherit",
+                  outline: "none",
+                }}
+                placeholder={t("scenarioForm.captionPlaceholder")}
+                value={form.image_captions[url] || ""}
+                maxLength={200}
+                disabled={busy || uploading}
+                onChange={(e) => patchCaption(url, e.target.value)}
+              />
               <div style={{ display: "flex", flexWrap: "wrap", gap: 0 }}>
                 <button
                   type="button"
@@ -1373,11 +1456,59 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
               ? t("scenarioForm.saveChanges")
               : t("scenarioForm.addScenario")}
         </button>
+        <button type="button" style={styles.ghostBtn} onClick={() => setShowPreview(true)} disabled={busy || uploading}>
+          {t("scenarioForm.preview")}
+        </button>
         <button type="button" style={styles.ghostBtn} onClick={requestCancel} disabled={busy || uploading}>
           {t("scenarioForm.cancel")}
         </button>
       </div>
       </div>
+      {showPreview ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("scenarioForm.previewTitle")}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 500,
+            background: "rgba(4, 8, 14, 0.85)",
+            display: "flex",
+            justifyContent: "center",
+            overflowY: "auto",
+            padding: "2rem 1rem",
+          }}
+          onClick={() => setShowPreview(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#0d1520",
+              border: "1px solid #1a2a3a",
+              borderRadius: 12,
+              padding: "1.5rem",
+              width: "100%",
+              maxWidth: 1180,
+              height: "fit-content",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <span style={{ color: "#8899aa", fontSize: "0.85rem" }}>{t("scenarioForm.previewNote")}</span>
+              <button type="button" style={styles.ghostBtn} onClick={() => setShowPreview(false)}>
+                {t("scenarioForm.closePreview")}
+              </button>
+            </div>
+            <ScenarioDetail
+              scenario={previewScenario}
+              view={previewView}
+              onBack={() => setShowPreview(false)}
+              onNotify={notify}
+              categoryWp={previewCategoryWp}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1487,6 +1618,8 @@ export default function AdminView() {
         (Array.isArray(data.image_urls) && data.image_urls[0]) ||
         data.image_url ||
         "",
+      image_captions:
+        data.image_captions && typeof data.image_captions === "object" ? data.image_captions : {},
       confluence_page_id: data.confluence_page_id || "",
       confluence_page_url: data.confluence_page_url || "",
       confluence_page_title: data.confluence_page_title || "",

@@ -315,7 +315,7 @@ function ScenarioCard({ scenario, view, onSelect, openLabel, categoryWp }) {
   );
 }
 
-function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp }) {
+export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp }) {
   const { t } = useTranslation();
   const blocks = useMemo(
     () =>
@@ -339,10 +339,14 @@ function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp }) {
     [blocks, acceptanceBlocks]
   );
   const images = useMemo(() => scenarioImageUrls(scenario), [scenario]);
+  const imageCaptions =
+    scenario.image_captions && typeof scenario.image_captions === "object" ? scenario.image_captions : {};
   const [checked, setChecked] = useState(() => ({}));
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const title = view?.title || scenario.title;
   const tags = Array.isArray(view?.tags) && view.tags.length ? view.tags : scenario.tags;
+  const narrow = useIsNarrow();
+  const hasSidebar = !narrow && Boolean(acceptanceText);
 
   useEffect(() => {
     setChecked({});
@@ -442,7 +446,7 @@ function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp }) {
   return (
     <article
       className="print-root"
-      style={styles.detail}
+      style={hasSidebar ? { ...styles.detail, maxWidth: 1120 } : styles.detail}
       aria-labelledby="scenario-detail-title"
     >
       <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginBottom: "1rem" }}>
@@ -459,24 +463,33 @@ function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp }) {
       </div>
       {images.length > 0 ? (
         <div style={galleryStyle}>
-          {images.map((url, i) => (
-            <img
-              key={`${url}-${i}`}
-              src={url}
-              alt=""
-              role="button"
-              tabIndex={0}
-              onClick={() => setLightboxIndex(i)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setLightboxIndex(i);
-                }
-              }}
-              aria-label={t("employee.openImage", { n: i + 1 })}
-              style={imgStyle}
-            />
-          ))}
+          {images.map((url, i) => {
+            const caption = imageCaptions[url];
+            return (
+              <figure key={`${url}-${i}`} style={{ margin: 0 }}>
+                <img
+                  src={url}
+                  alt={caption || ""}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setLightboxIndex(i)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setLightboxIndex(i);
+                    }
+                  }}
+                  aria-label={t("employee.openImage", { n: i + 1 })}
+                  style={imgStyle}
+                />
+                {caption ? (
+                  <figcaption style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: "0.35rem" }}>
+                    {caption}
+                  </figcaption>
+                ) : null}
+              </figure>
+            );
+          })}
         </div>
       ) : null}
 
@@ -535,18 +548,24 @@ function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp }) {
               →
             </button>
           ) : null}
-          <img
-            src={images[lightboxIndex]}
-            alt=""
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              maxWidth: "min(96vw, 1200px)",
-              maxHeight: "90vh",
-              objectFit: "contain",
-              borderRadius: 8,
-              cursor: "default",
-            }}
-          />
+          <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
+            <img
+              src={images[lightboxIndex]}
+              alt={imageCaptions[images[lightboxIndex]] || ""}
+              style={{
+                maxWidth: "min(96vw, 1200px)",
+                maxHeight: "90vh",
+                objectFit: "contain",
+                borderRadius: 8,
+                cursor: "default",
+              }}
+            />
+            {imageCaptions[images[lightboxIndex]] ? (
+              <div style={{ color: "#eaf0fb", fontSize: "0.9rem", textAlign: "center" }}>
+                {imageCaptions[images[lightboxIndex]]}
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -564,38 +583,59 @@ function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp }) {
         ) : null}
       </div>
 
-      {view?.scenario ? (
-        <div style={styles.detailSection}>
-          <div style={styles.detailSectionLabel}>{t("employee.situation")}</div>
-          <ParagraphText text={view.scenario} baseStyle={styles.detailBody} />
+      <div
+        style={
+          hasSidebar
+            ? { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 320px", gap: "1.5rem", alignItems: "start" }
+            : undefined
+        }
+      >
+        <div>
+          {view?.scenario ? (
+            <div style={styles.detailSection}>
+              <div style={styles.detailSectionLabel}>{t("employee.situation")}</div>
+              <ParagraphText text={view.scenario} baseStyle={styles.detailBody} />
+            </div>
+          ) : null}
+          <div style={styles.detailSection}>
+            <div style={styles.detailSectionLabel}>{t("employee.procedure")}</div>
+            <SolutionBlockList
+              blocks={blocks}
+              checked={checked}
+              markLabel={t("employee.markStep")}
+              onToggle={(key, value) => setChecked((prev) => ({ ...prev, [key]: value }))}
+            />
+          </div>
+          {!hasSidebar && acceptanceText ? (
+            <div style={styles.detailSection}>
+              <div style={styles.detailSectionLabel}>{t("employee.acceptance")}</div>
+              <SolutionBlockList
+                blocks={acceptanceBlocks}
+                checked={checked}
+                markLabel={t("employee.markStep")}
+                onToggle={(key, value) => setChecked((prev) => ({ ...prev, [key]: value }))}
+              />
+            </div>
+          ) : null}
+          <div style={styles.detailTags}>
+            {tags.map((tag, i) => (
+              <span key={`${tag}-${i}`} style={styles.tagLarge}>
+                {tag}
+              </span>
+            ))}
+          </div>
         </div>
-      ) : null}
-      <div style={styles.detailSection}>
-        <div style={styles.detailSectionLabel}>{t("employee.procedure")}</div>
-        <SolutionBlockList
-          blocks={blocks}
-          checked={checked}
-          markLabel={t("employee.markStep")}
-          onToggle={(key, value) => setChecked((prev) => ({ ...prev, [key]: value }))}
-        />
-      </div>
-      {acceptanceText ? (
-        <div style={styles.detailSection}>
-          <div style={styles.detailSectionLabel}>{t("employee.acceptance")}</div>
-          <SolutionBlockList
-            blocks={acceptanceBlocks}
-            checked={checked}
-            markLabel={t("employee.markStep")}
-            onToggle={(key, value) => setChecked((prev) => ({ ...prev, [key]: value }))}
-          />
-        </div>
-      ) : null}
-      <div style={styles.detailTags}>
-        {tags.map((tag, i) => (
-          <span key={`${tag}-${i}`} style={styles.tagLarge}>
-            {tag}
-          </span>
-        ))}
+        {hasSidebar ? (
+          <div style={styles.detailSection}>
+            <div style={styles.detailSectionLabel}>{t("employee.acceptance")}</div>
+            <SolutionBlockList
+              blocks={acceptanceBlocks}
+              checked={checked}
+              markLabel={t("employee.markStep")}
+              onToggle={(key, value) => setChecked((prev) => ({ ...prev, [key]: value }))}
+            />
+          </div>
+        ) : null}
       </div>
       {scenario.confluence_page_id ? (
         <ConfluenceView
@@ -620,6 +660,7 @@ export default function EmployeeView() {
   const [filterWp, setFilterWp] = useState("");
   const [filterVerdict, setFilterVerdict] = useState(null);
   const [recentIds, setRecentIds] = useState(() => readRecentIds());
+  const [recentExpanded, setRecentExpanded] = useState(false);
   const narrow = useIsNarrow();
   const [navOpen, setNavOpen] = useState(false);
   const searchRef = useRef(null);
@@ -925,40 +966,54 @@ export default function EmployeeView() {
 
         {recentScenarios.length > 0 ? (
           <div style={{ padding: "0 0.5rem 0.75rem" }}>
-            <div
+            <button
+              type="button"
+              onClick={() => setRecentExpanded((v) => !v)}
+              aria-expanded={recentExpanded}
               style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                width: "100%",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
                 padding: "0 0.75rem 0.35rem",
                 fontSize: "0.72rem",
                 fontWeight: 700,
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
                 color: "#4fa3ff",
+                fontFamily: "inherit",
               }}
             >
-              {t("employee.recent")}
-            </div>
-            {recentScenarios.map((s) => (
-              <button
-                key={`recent-${s.id}`}
-                type="button"
-                style={{
-                  ...styles.catBtn,
-                  ...(selectedScenario?.id === s.id ? styles.catBtnActive : {}),
-                }}
-                onClick={() => openScenario(s)}
-              >
-                <span
-                  style={{
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    maxWidth: "100%",
-                  }}
-                >
-                  {s.title}
-                </span>
-              </button>
-            ))}
+              <span>{t("employee.recent", { count: recentScenarios.length })}</span>
+              <span aria-hidden="true">{recentExpanded ? "▲" : "▼"}</span>
+            </button>
+            {recentExpanded
+              ? recentScenarios.map((s) => (
+                  <button
+                    key={`recent-${s.id}`}
+                    type="button"
+                    style={{
+                      ...styles.catBtn,
+                      ...(selectedScenario?.id === s.id ? styles.catBtnActive : {}),
+                    }}
+                    onClick={() => openScenario(s)}
+                  >
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        maxWidth: "100%",
+                      }}
+                    >
+                      {s.title}
+                    </span>
+                  </button>
+                ))
+              : null}
           </div>
         ) : null}
 

@@ -49,6 +49,7 @@ const {
 const {
   normalizeScenario,
   sanitizeImageUrls,
+  sanitizeImageCaptions,
   sanitizeTranslations,
   isLocalUploadPath,
   MAX_SCENARIO_IMAGES,
@@ -246,6 +247,7 @@ function parseScenarioBody(body) {
   }
 
   const image_urls = sanitizeImageUrls(candidates, { allowLocalUploads });
+  const image_captions = sanitizeImageCaptions(body?.image_captions, image_urls);
   const translations = sanitizeTranslations(body?.translations);
   const primaryLanguage =
     typeof body?.primary_language === "string" &&
@@ -293,6 +295,7 @@ function parseScenarioBody(body) {
     tags: derivedTags,
     image_urls,
     image_url: image_urls[0] || "",
+    image_captions,
     translations,
     primary_language: primaryLanguage,
     confluence_page_id: sanitizeConfluencePageId(body?.confluence_page_id),
