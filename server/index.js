@@ -318,6 +318,7 @@ function parseScenarioBody(body) {
     { allowLocalUploads }
   );
   if (!normalized) return null;
+  delete normalized.id;
   normalized.primary_language = primaryLanguage;
   return normalized;
 }

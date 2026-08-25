@@ -114,6 +114,11 @@
     "procedure": "Procedura",
     "acceptance": "Kriteret e pranimit",
     "allWps": "Të gjitha WP",
+    "hasChecklist": "Ka një listë kontrolli hap pas hapi",
+    "hasConfluence": "E lidhur me një faqe Confluence",
+    "favorites": "Të preferuarat ({{count}})",
+    "favorite": "Shto te të preferuarat",
+    "unfavorite": "Hiq nga të preferuarat",
     "recent": "Të fundit ({{count}})",
     "copyProcedure": "Kopjo procedurën",
     "copied": "Procedura u kopjua",
@@ -124,6 +129,9 @@
     "searchShortcutHint": "Shtyp / për të kërkuar (titull, WP, etiketa…)",
     "openImage": "Hap foton {{n}}",
     "imageLightbox": "Pamje e fotos",
+    "zoomIn": "Zmadho",
+    "zoomOut": "Zvogëlo",
+    "zoomReset": "Rivendos zmadhimin",
     "closeImage": "Mbyll"
   },
   "reset": {

@@ -467,6 +467,11 @@ export const styles = {
     lineHeight: 1.3,
     color: "#eaf0fb",
   },
+  cardMiniBadge: {
+    fontSize: "0.8rem",
+    color: "#8899aa",
+    lineHeight: 1,
+  },
   cardSnippet: {
     color: "#8899aa",
     fontSize: "0.85rem",

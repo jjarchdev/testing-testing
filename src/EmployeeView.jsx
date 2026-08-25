@@ -7,8 +7,22 @@ import { useAppData } from "./AppData.jsx";
 import { pickTranslation, VERDICT_CODES } from "../shared/scenarioSchema.mjs";
 import { ALL_FILTER, accentForCategory, buildCategoryCounts, localePath, formatCategoryLabel } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
-import { pushRecentId, readRecentIds } from "./recent.js";
+import {
+  pushRecentId,
+  readRecentIds,
+  readFavoriteIds,
+  toggleFavoriteId,
+  readCheckedSteps,
+  writeCheckedSteps,
+} from "./recent.js";
 import { styles } from "./styles.js";
+
+function truncateAtWord(text, max) {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut}…`;
+}
 
 function normalizeSearchText(value) {
   return String(value || "")
@@ -251,11 +265,11 @@ function categoryWps(scenario, wpsByLabel) {
   return one ? one.split(/,\s*/).filter(Boolean) : [];
 }
 
-function ScenarioCard({ scenario, view, onSelect, openLabel, categoryWp }) {
+function ScenarioCard({ scenario, view, onSelect, openLabel, categoryWp, isFavorite, onToggleFavorite }) {
   const { t } = useTranslation();
   const color = accentForCategory(scenario.category);
   const text = view.scenario;
-  const snippet = text.length > 100 ? `${text.slice(0, 100)}…` : text;
+  const snippet = truncateAtWord(text, 100);
   const images = scenarioImageUrls(scenario);
   const imageUrl = images[0] || "";
   const title = view.title || scenario.title;
@@ -275,6 +289,37 @@ function ScenarioCard({ scenario, view, onSelect, openLabel, categoryWp }) {
       }}
     >
       <div style={{ ...styles.cardAccent, background: color }} />
+      {onToggleFavorite ? (
+        <button
+          type="button"
+          className="no-print"
+          aria-label={isFavorite ? t("employee.unfavorite") : t("employee.favorite")}
+          title={isFavorite ? t("employee.unfavorite") : t("employee.favorite")}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleFavorite();
+          }}
+          style={{
+            position: "absolute",
+            top: 10,
+            right: 10,
+            zIndex: 2,
+            background: "rgba(8, 14, 22, 0.75)",
+            border: "none",
+            borderRadius: 6,
+            width: 30,
+            height: 30,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: isFavorite ? "#f5c518" : "#8899aa",
+            fontSize: "1.05rem",
+          }}
+        >
+          {isFavorite ? "★" : "☆"}
+        </button>
+      ) : null}
       {imageUrl ? (
         <div style={{ position: "relative", margin: "-1.25rem -1.25rem 0.85rem" }}>
           <img
@@ -307,7 +352,19 @@ function ScenarioCard({ scenario, view, onSelect, openLabel, categoryWp }) {
         </div>
       ) : null}
       <div style={styles.cardCat}>{formatCategoryLabel(scenario.category, categoryWp)}</div>
-      <VerdictBadge code={scenario.verdict} t={t} />
+      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+        <VerdictBadge code={scenario.verdict} t={t} />
+        {scenario.solution_as_checklist || scenario.acceptance_as_checklist ? (
+          <span title={t("employee.hasChecklist")} aria-label={t("employee.hasChecklist")} style={styles.cardMiniBadge}>
+            ☑
+          </span>
+        ) : null}
+        {scenario.confluence_page_id ? (
+          <span title={t("employee.hasConfluence")} aria-label={t("employee.hasConfluence")} style={styles.cardMiniBadge}>
+            🔗
+          </span>
+        ) : null}
+      </div>
       <h3 style={styles.cardTitle}>{title}</h3>
       <p style={styles.cardSnippet}>{snippet}</p>
       <div style={styles.cardTags}>
@@ -322,7 +379,7 @@ function ScenarioCard({ scenario, view, onSelect, openLabel, categoryWp }) {
   );
 }
 
-export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp }) {
+export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp, isFavorite, onToggleFavorite }) {
   const { t } = useTranslation();
   const blocks = useMemo(
     () =>
@@ -348,17 +405,33 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp })
   const images = useMemo(() => scenarioImageUrls(scenario), [scenario]);
   const imageCaptions =
     scenario.image_captions && typeof scenario.image_captions === "object" ? scenario.image_captions : {};
-  const [checked, setChecked] = useState(() => ({}));
+  const persistProgress = Number.isFinite(Number(scenario.id));
+  const [checked, setChecked] = useState(() => (persistProgress ? readCheckedSteps(scenario.id) : {}));
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const ZOOM_MIN = 1;
+  const ZOOM_MAX = 3;
+  const ZOOM_STEP = 0.5;
+  const handleToggleStep = (key, value) => {
+    setChecked((prev) => {
+      const next = { ...prev, [key]: value };
+      if (persistProgress) writeCheckedSteps(scenario.id, next);
+      return next;
+    });
+  };
   const title = view?.title || scenario.title;
   const tags = Array.isArray(view?.tags) && view.tags.length ? view.tags : scenario.tags;
   const narrow = useIsNarrow();
   const hasSidebar = !narrow && Boolean(acceptanceText);
 
   useEffect(() => {
-    setChecked({});
+    setChecked(persistProgress ? readCheckedSteps(scenario.id) : {});
     setLightboxIndex(null);
   }, [scenario.id]);
+
+  useEffect(() => {
+    setZoom(1);
+  }, [lightboxIndex]);
 
   useEffect(() => {
     if (lightboxIndex == null) return;
@@ -370,6 +443,13 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp })
       if (e.key === "ArrowLeft" && lightboxIndex > 0) {
         setLightboxIndex((i) => i - 1);
       }
+      if (e.key === "+" || e.key === "=") {
+        setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP));
+      }
+      if (e.key === "-" || e.key === "_") {
+        setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP));
+      }
+      if (e.key === "0") setZoom(1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -456,10 +536,29 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp })
       style={hasSidebar ? { ...styles.detail, maxWidth: 1120 } : styles.detail}
       aria-labelledby="scenario-detail-title"
     >
-      <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginBottom: "1rem" }}>
+      <div
+        className="no-print"
+        style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginBottom: "1rem", justifyContent: "space-between", alignItems: "center" }}
+      >
         <button type="button" style={styles.detailBack} onClick={onBack}>
           {t("employee.backAll")}
         </button>
+        {onToggleFavorite ? (
+          <button
+            type="button"
+            aria-label={isFavorite ? t("employee.unfavorite") : t("employee.favorite")}
+            title={isFavorite ? t("employee.unfavorite") : t("employee.favorite")}
+            onClick={onToggleFavorite}
+            style={{
+              ...styles.ghostBtn,
+              padding: "0.4rem 0.75rem",
+              color: isFavorite ? "#f5c518" : undefined,
+              borderColor: isFavorite ? "#f5c518" : undefined,
+            }}
+          >
+            {isFavorite ? "★" : "☆"} {isFavorite ? t("employee.unfavorite") : t("employee.favorite")}
+          </button>
+        ) : null}
       </div>
       <div style={styles.detailCat}>{formatCategoryLabel(scenario.category, categoryWp)}</div>
       <h2 id="scenario-detail-title" style={styles.detailTitle}>
@@ -556,17 +655,59 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp })
             </button>
           ) : null}
           <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
-            <img
-              src={images[lightboxIndex]}
-              alt={imageCaptions[images[lightboxIndex]] || ""}
+            <div
               style={{
-                maxWidth: "min(96vw, 1200px)",
-                maxHeight: "90vh",
-                objectFit: "contain",
-                borderRadius: 8,
-                cursor: "default",
+                overflow: "auto",
+                maxWidth: "96vw",
+                maxHeight: "78vh",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
               }}
-            />
+            >
+              <img
+                src={images[lightboxIndex]}
+                alt={imageCaptions[images[lightboxIndex]] || ""}
+                style={{
+                  maxWidth: "min(96vw, 1200px)",
+                  maxHeight: "78vh",
+                  objectFit: "contain",
+                  borderRadius: 8,
+                  cursor: "default",
+                  transform: `scale(${zoom})`,
+                  transformOrigin: "center center",
+                  transition: "transform 120ms ease",
+                }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <button
+                type="button"
+                style={{ ...styles.ghostBtn, padding: "0.35rem 0.75rem" }}
+                disabled={zoom <= ZOOM_MIN}
+                aria-label={t("employee.zoomOut")}
+                onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                style={{ ...styles.ghostBtn, padding: "0.35rem 0.75rem", minWidth: 56 }}
+                aria-label={t("employee.zoomReset")}
+                onClick={() => setZoom(1)}
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                type="button"
+                style={{ ...styles.ghostBtn, padding: "0.35rem 0.75rem" }}
+                disabled={zoom >= ZOOM_MAX}
+                aria-label={t("employee.zoomIn")}
+                onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}
+              >
+                +
+              </button>
+            </div>
             {imageCaptions[images[lightboxIndex]] ? (
               <div style={{ color: "#eaf0fb", fontSize: "0.9rem", textAlign: "center" }}>
                 {imageCaptions[images[lightboxIndex]]}
@@ -610,7 +751,7 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp })
               blocks={blocks}
               checked={checked}
               markLabel={t("employee.markStep")}
-              onToggle={(key, value) => setChecked((prev) => ({ ...prev, [key]: value }))}
+              onToggle={handleToggleStep}
             />
           </div>
           {!hasSidebar && acceptanceText ? (
@@ -620,7 +761,7 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp })
                 blocks={acceptanceBlocks}
                 checked={checked}
                 markLabel={t("employee.markStep")}
-                onToggle={(key, value) => setChecked((prev) => ({ ...prev, [key]: value }))}
+                onToggle={handleToggleStep}
               />
             </div>
           ) : null}
@@ -639,7 +780,7 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp })
               blocks={acceptanceBlocks}
               checked={checked}
               markLabel={t("employee.markStep")}
-              onToggle={(key, value) => setChecked((prev) => ({ ...prev, [key]: value }))}
+              onToggle={handleToggleStep}
             />
           </div>
         ) : null}
@@ -668,6 +809,9 @@ export default function EmployeeView() {
   const [filterVerdict, setFilterVerdict] = useState(null);
   const [recentIds, setRecentIds] = useState(() => readRecentIds());
   const [recentExpanded, setRecentExpanded] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState(() => readFavoriteIds());
+  const [favoritesExpanded, setFavoritesExpanded] = useState(true);
+  const handleToggleFavorite = (id) => setFavoriteIds(toggleFavoriteId(id));
   const narrow = useIsNarrow();
   const [navOpen, setNavOpen] = useState(false);
   const searchRef = useRef(null);
@@ -754,7 +898,18 @@ export default function EmployeeView() {
     return recentIds.map((id) => byId.get(id)).filter(Boolean);
   }, [classifiedList, recentIds]);
 
-  const showVerdictStep = !selectedScenario && !searching && !filterVerdict;
+  const favoriteScenarios = useMemo(() => {
+    const byId = new Map(classifiedList.map((s) => [s.id, s]));
+    return favoriteIds.map((id) => byId.get(id)).filter(Boolean);
+  }, [classifiedList, favoriteIds]);
+
+  const SKIP_VERDICT_STEP_MAX = 4;
+  const showVerdictStep =
+    !selectedScenario &&
+    !searching &&
+    !filterVerdict &&
+    visibleVerdicts.length > 1 &&
+    inCategory.length > SKIP_VERDICT_STEP_MAX;
 
   const openScenario = (scenario) => {
     if (!scenario) return;
@@ -971,6 +1126,59 @@ export default function EmployeeView() {
           </div>
         ) : null}
 
+        {favoriteScenarios.length > 0 ? (
+          <div style={{ padding: "0 0.5rem 0.75rem" }}>
+            <button
+              type="button"
+              onClick={() => setFavoritesExpanded((v) => !v)}
+              aria-expanded={favoritesExpanded}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                width: "100%",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: "0 0.75rem 0.35rem",
+                fontSize: "0.72rem",
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "#4fa3ff",
+                fontFamily: "inherit",
+              }}
+            >
+              <span>{t("employee.favorites", { count: favoriteScenarios.length })}</span>
+              <span aria-hidden="true">{favoritesExpanded ? "▲" : "▼"}</span>
+            </button>
+            {favoritesExpanded
+              ? favoriteScenarios.map((s) => (
+                  <button
+                    key={`favorite-${s.id}`}
+                    type="button"
+                    style={{
+                      ...styles.catBtn,
+                      ...(selectedScenario?.id === s.id ? styles.catBtnActive : {}),
+                    }}
+                    onClick={() => openScenario(s)}
+                  >
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        maxWidth: "100%",
+                      }}
+                    >
+                      ★ {s.title}
+                    </span>
+                  </button>
+                ))
+              : null}
+          </div>
+        ) : null}
+
         {recentScenarios.length > 0 ? (
           <div style={{ padding: "0 0.5rem 0.75rem" }}>
             <button
@@ -1113,6 +1321,8 @@ export default function EmployeeView() {
             categoryWp={categoryWps(selectedScenario, wpsByLabel)}
             onBack={closeDetail}
             onNotify={notify}
+            isFavorite={favoriteIds.includes(selectedScenario.id)}
+            onToggleFavorite={() => handleToggleFavorite(selectedScenario.id)}
           />
         ) : showVerdictStep ? (
           <>
@@ -1174,7 +1384,7 @@ export default function EmployeeView() {
                   </button>
                 ) : null}
                 <h2 style={styles.mainTitle}>
-                  {searching
+                  {searching || !filterVerdict
                     ? filterCategory === ALL_FILTER
                       ? t("employee.allScenarios")
                       : formatCategoryLabel(filterCategory, wpsByLabel[filterCategory])
@@ -1187,6 +1397,20 @@ export default function EmployeeView() {
                   : t("employee.proceduresCount", { count: filteredScenarios.length })}
               </span>
             </div>
+            {!searching && !filterVerdict && visibleVerdicts.length > 1 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", marginBottom: "1rem" }}>
+                {visibleVerdicts.map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    style={{ ...styles.ghostBtn, padding: "0.3rem 0.65rem", fontSize: "0.8rem" }}
+                    onClick={() => setFilterVerdict(code)}
+                  >
+                    {t(`verdict.${code}`)} · {verdictCounts[code]}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {filteredScenarios.length === 0 ? (
               <div style={styles.empty}>{emptyMessage()}</div>
             ) : (
@@ -1199,6 +1423,8 @@ export default function EmployeeView() {
                     categoryWp={categoryWps(s, wpsByLabel)}
                     openLabel={t("employee.open")}
                     onSelect={() => openScenario(s)}
+                    isFavorite={favoriteIds.includes(s.id)}
+                    onToggleFavorite={() => handleToggleFavorite(s.id)}
                   />
                 ))}
               </div>

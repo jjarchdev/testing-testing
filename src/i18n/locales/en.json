@@ -114,6 +114,11 @@
     "procedure": "Procedure",
     "acceptance": "Acceptance criteria",
     "allWps": "All WPs",
+    "hasChecklist": "Has a step-by-step checklist",
+    "hasConfluence": "Linked to a Confluence page",
+    "favorites": "Favorites ({{count}})",
+    "favorite": "Add to favorites",
+    "unfavorite": "Remove from favorites",
     "recent": "Recent ({{count}})",
     "copyProcedure": "Copy procedure",
     "copied": "Procedure copied",
@@ -124,6 +129,9 @@
     "searchShortcutHint": "Press / to search (title, WP, tags…)",
     "openImage": "Open image {{n}}",
     "imageLightbox": "Image preview",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "zoomReset": "Reset zoom",
     "closeImage": "Close"
   },
   "login": {
