@@ -207,7 +207,7 @@ function SolutionBlockList({ blocks, checked, onToggle, markLabel }) {
                   opacity: isChecked ? 0.65 : 1,
                 }}
               >
-                {step.text}
+                {renderInlineFormatting(step.text)}
               </span>
             </li>
           );
@@ -217,6 +217,26 @@ function SolutionBlockList({ blocks, checked, onToggle, markLabel }) {
       <ParagraphText key={block.key} text={block.text} baseStyle={styles.detailBody} />
     )
   );
+}
+
+function renderInlineFormatting(text) {
+  const source = String(text || "");
+  const regex = /\*\*(.+?)\*\*|_(.+?)_/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+  while ((match = regex.exec(source))) {
+    if (match.index > lastIndex) parts.push(source.slice(lastIndex, match.index));
+    if (match[1] !== undefined) {
+      parts.push(<strong key={key++}>{match[1]}</strong>);
+    } else {
+      parts.push(<em key={key++}>{match[2]}</em>);
+    }
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < source.length) parts.push(source.slice(lastIndex));
+  return parts;
 }
 
 function ParagraphText({ text, baseStyle }) {
@@ -234,7 +254,7 @@ function ParagraphText({ text, baseStyle }) {
           <p key={i} style={baseStyle}>
             {lines.map((ln, j) => (
               <span key={j}>
-                {ln}
+                {renderInlineFormatting(ln)}
                 {j < lines.length - 1 ? <br /> : null}
               </span>
             ))}
@@ -423,6 +443,7 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp, i
   const tags = Array.isArray(view?.tags) && view.tags.length ? view.tags : scenario.tags;
   const narrow = useIsNarrow();
   const hasSidebar = !narrow && Boolean(acceptanceText);
+  const wide = !narrow && (hasSidebar || images.length > 1);
 
   useEffect(() => {
     setChecked(persistProgress ? readCheckedSteps(scenario.id) : {});
@@ -533,7 +554,7 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp, i
   return (
     <article
       className="print-root"
-      style={hasSidebar ? { ...styles.detail, maxWidth: 1120 } : styles.detail}
+      style={wide ? { ...styles.detail, maxWidth: 1120 } : styles.detail}
       aria-labelledby="scenario-detail-title"
     >
       <div
@@ -1016,11 +1037,13 @@ export default function EmployeeView() {
   };
 
   return (
-    <div style={styles.appWrap}>
+    <div style={{ ...styles.appWrap, height: "100vh", overflow: "hidden" }}>
       <nav
         className="no-print"
         style={{
           ...styles.sidebar,
+          height: "100%",
+          overflow: "hidden",
           ...(narrow
             ? {
                 position: "fixed",
@@ -1083,10 +1106,9 @@ export default function EmployeeView() {
             </button>
           ) : null}
         </div>
-        <div style={{ padding: "0 1rem 0.75rem", color: "#8899aa", fontSize: "0.72rem" }}>
-          {t("employee.searchShortcutHint")}
-        </div>
         {wpValues.length > 0 ? (
+          <>
+          <div style={{ ...styles.sidebarSectionLabel, marginTop: "0.5rem" }}>{t("employee.wpSectionLabel")}</div>
           <div
             style={{
               display: "flex",
@@ -1131,6 +1153,7 @@ export default function EmployeeView() {
               </button>
             ))}
           </div>
+          </>
         ) : null}
 
         {favoriteScenarios.length > 0 ? (
@@ -1239,6 +1262,7 @@ export default function EmployeeView() {
           </div>
         ) : null}
 
+        <div style={{ ...styles.sidebarSectionLabel, marginTop: "0.5rem" }}>{t("employee.categoriesSectionLabel")}</div>
         <div style={styles.catList}>
           {allCategories.map((cat) => (
             <button

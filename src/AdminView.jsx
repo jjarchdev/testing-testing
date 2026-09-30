@@ -69,6 +69,40 @@ function translationsEqual(a, b) {
   return true;
 }
 
+function TextFormatToolbar({ onBold, onItalic, onList, t }) {
+  return (
+    <div style={{ display: "flex", gap: "0.35rem", marginBottom: "0.35rem" }}>
+      <button
+        type="button"
+        style={{ ...styles.ghostBtn, padding: "0.25rem 0.65rem", fontWeight: 700 }}
+        onClick={onBold}
+        title={t("scenarioForm.formatBold")}
+        aria-label={t("scenarioForm.formatBold")}
+      >
+        B
+      </button>
+      <button
+        type="button"
+        style={{ ...styles.ghostBtn, padding: "0.25rem 0.65rem", fontStyle: "italic" }}
+        onClick={onItalic}
+        title={t("scenarioForm.formatItalic")}
+        aria-label={t("scenarioForm.formatItalic")}
+      >
+        I
+      </button>
+      <button
+        type="button"
+        style={{ ...styles.ghostBtn, padding: "0.25rem 0.65rem", fontSize: "0.8rem" }}
+        onClick={onList}
+        title={t("scenarioForm.formatList")}
+        aria-label={t("scenarioForm.formatList")}
+      >
+        1. 2. 3.
+      </button>
+    </div>
+  );
+}
+
 function scenarioImageUrls(scenario) {
   if (Array.isArray(scenario?.image_urls) && scenario.image_urls.length) {
     return scenario.image_urls.filter((u) => typeof u === "string" && u.trim());
@@ -681,6 +715,43 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
     }));
   };
 
+  const scenarioTextRef = useRef(null);
+  const solutionTextRef = useRef(null);
+  const acceptanceTextRef = useRef(null);
+
+  const wrapSelection = (ref, fieldKey, before, after, placeholder) => {
+    const el = ref.current;
+    if (!el) return;
+    const { selectionStart, selectionEnd, value } = el;
+    const selected = value.slice(selectionStart, selectionEnd) || placeholder;
+    const newValue = value.slice(0, selectionStart) + before + selected + after + value.slice(selectionEnd);
+    patchLang(activeLang, fieldKey, newValue);
+    requestAnimationFrame(() => {
+      el.focus();
+      const start = selectionStart + before.length;
+      el.setSelectionRange(start, start + selected.length);
+    });
+  };
+
+  const insertList = (ref, fieldKey) => {
+    const el = ref.current;
+    if (!el) return;
+    const { selectionStart, selectionEnd, value } = el;
+    const selected = value.slice(selectionStart, selectionEnd);
+    const lines = selected.split("\n").map((l) => l.trim()).filter(Boolean);
+    const insertion =
+      lines.length >= 2
+        ? lines.map((l, i) => `${i + 1}. ${l}`).join("\n\n")
+        : `1. ${t("scenarioForm.formatListItemOne")}\n\n2. ${t("scenarioForm.formatListItemTwo")}`;
+    const newValue = value.slice(0, selectionStart) + insertion + value.slice(selectionEnd);
+    patchLang(activeLang, fieldKey, newValue);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = selectionStart + insertion.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
   const atImageCap = form.image_urls.length >= MAX_SCENARIO_IMAGES;
 
   const appendImageUrls = (urls) => {
@@ -1046,7 +1117,14 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
       <label style={styles.label}>
         {t("scenarioForm.scenario")} ({LANG_LABELS[activeLang]})
       </label>
+      <TextFormatToolbar
+        t={t}
+        onBold={() => wrapSelection(scenarioTextRef, "scenario", "**", "**", t("scenarioForm.formatBoldPlaceholder"))}
+        onItalic={() => wrapSelection(scenarioTextRef, "scenario", "_", "_", t("scenarioForm.formatItalicPlaceholder"))}
+        onList={() => insertList(scenarioTextRef, "scenario")}
+      />
       <textarea
+        ref={scenarioTextRef}
         style={{ ...styles.input, height: 100 }}
         placeholder={t("scenarioForm.situationPlaceholder")}
         value={form.translations[activeLang].scenario}
@@ -1096,7 +1174,14 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           );
         })}
       </div>
+      <TextFormatToolbar
+        t={t}
+        onBold={() => wrapSelection(solutionTextRef, "solution", "**", "**", t("scenarioForm.formatBoldPlaceholder"))}
+        onItalic={() => wrapSelection(solutionTextRef, "solution", "_", "_", t("scenarioForm.formatItalicPlaceholder"))}
+        onList={() => insertList(solutionTextRef, "solution")}
+      />
       <textarea
+        ref={solutionTextRef}
         style={{ ...styles.input, height: 200 }}
         placeholder={
           form.solution_as_checklist
@@ -1147,7 +1232,14 @@ function ScenarioForm({ initial, categories, onSave, onCancel }) {
           );
         })}
       </div>
+      <TextFormatToolbar
+        t={t}
+        onBold={() => wrapSelection(acceptanceTextRef, "acceptance", "**", "**", t("scenarioForm.formatBoldPlaceholder"))}
+        onItalic={() => wrapSelection(acceptanceTextRef, "acceptance", "_", "_", t("scenarioForm.formatItalicPlaceholder"))}
+        onList={() => insertList(acceptanceTextRef, "acceptance")}
+      />
       <textarea
+        ref={acceptanceTextRef}
         style={{ ...styles.input, height: 200 }}
         placeholder={
           form.acceptance_as_checklist
