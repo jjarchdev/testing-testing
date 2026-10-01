@@ -292,8 +292,6 @@ function CategoryManager({ categories, workPackages, onSave, onDelete, onBack, o
           <div style={styles.tableHead}>
             <span style={{ flex: 2 }}>{t("categories.colLabel")}</span>
             <span style={{ flex: 1.2 }}>{t("categories.colWp")}</span>
-            <span style={{ flex: 1 }}>{t("categories.colSlug")}</span>
-            <span style={{ width: 70 }}>{t("categories.colOrder")}</span>
             <span style={{ flex: 1, textAlign: "right" }}>{t("categories.colActions")}</span>
           </div>
           {categories.map((cat) => (
@@ -332,8 +330,6 @@ function CategoryManager({ categories, workPackages, onSave, onDelete, onBack, o
                   <span style={{ flex: 1.2, color: "#8899aa", fontSize: "0.85rem" }}>
                     {(Array.isArray(cat.wps) && cat.wps.length ? cat.wps.join(", ") : null) || "—"}
                   </span>
-                  <span style={{ flex: 1, color: "#8899aa", fontSize: "0.85rem" }}>{cat.slug}</span>
-                  <span style={{ width: 70, color: "#8899aa" }}>{cat.sort_order}</span>
                   <div style={{ flex: 1, display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
                     <button type="button" style={styles.editBtn} onClick={() => startEdit(cat)}>
                       {t("admin.edit")}
@@ -487,8 +483,6 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onBack }) {
         <div style={{ ...styles.adminTable, marginTop: "2rem" }}>
           <div style={styles.tableHead}>
             <span style={{ flex: 2 }}>{t("workPackages.colLabel")}</span>
-            <span style={{ flex: 1 }}>{t("workPackages.colSlug")}</span>
-            <span style={{ width: 70 }}>{t("workPackages.colOrder")}</span>
             <span style={{ flex: 1, textAlign: "right" }}>{t("workPackages.colActions")}</span>
           </div>
           {workPackages.map((wp) => (
@@ -524,8 +518,6 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onBack }) {
               ) : (
                 <>
                   <span style={{ flex: 2, fontWeight: 600 }}>{wp.label}</span>
-                  <span style={{ flex: 1, color: "#8899aa", fontSize: "0.85rem" }}>{wp.slug}</span>
-                  <span style={{ width: 70, color: "#8899aa" }}>{wp.sort_order}</span>
                   <div style={{ flex: 1, display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
                     <button type="button" style={styles.editBtn} onClick={() => startEdit(wp)}>
                       {t("admin.edit")}

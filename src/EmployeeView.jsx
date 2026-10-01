@@ -868,6 +868,7 @@ export default function EmployeeView() {
   const [recentExpanded, setRecentExpanded] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState(() => readFavoriteIds());
   const [favoritesExpanded, setFavoritesExpanded] = useState(true);
+  const [categoriesExpanded, setCategoriesExpanded] = useState(false);
   const handleToggleFavorite = (id) => setFavoriteIds(toggleFavoriteId(id));
   const narrow = useIsNarrow();
   const [navOpen, setNavOpen] = useState(false);
@@ -881,6 +882,16 @@ export default function EmployeeView() {
   );
   const categoryLabels = useMemo(() => (categories || []).map((c) => c.label), [categories]);
   const allCategories = useMemo(() => [ALL_FILTER, ...categoryLabels], [categoryLabels]);
+  const CATEGORY_COLLAPSE_THRESHOLD = 6;
+  const categoriesCollapsible = allCategories.length > CATEGORY_COLLAPSE_THRESHOLD;
+  const visibleCategories = useMemo(() => {
+    if (!categoriesCollapsible || categoriesExpanded) return allCategories;
+    const base = allCategories.slice(0, CATEGORY_COLLAPSE_THRESHOLD);
+    if (filterCategory !== ALL_FILTER && !base.includes(filterCategory)) {
+      return [...base, filterCategory];
+    }
+    return base;
+  }, [allCategories, categoriesCollapsible, categoriesExpanded, filterCategory]);
   const wpsByLabel = useMemo(() => {
     const m = Object.create(null);
     for (const c of categories || []) {
@@ -1138,43 +1149,23 @@ export default function EmployeeView() {
         {wpValues.length > 0 ? (
           <div style={styles.sidebarGroup}>
             <div style={styles.sidebarGroupLabel}>{t("employee.wpSectionLabel")}</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
-              <button
-                type="button"
-                style={{
-                  ...styles.ghostBtn,
-                  padding: "0.3rem 0.65rem",
-                  fontSize: "0.75rem",
-                  ...(filterWp === "" ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
-                }}
-                onClick={() => {
-                  setFilterWp("");
-                  setFilterVerdict(null);
-                  if (selectedScenario) closeDetail();
-                }}
-              >
-                {t("employee.allWps")}
-              </button>
+            <select
+              style={styles.select}
+              value={filterWp}
+              aria-label={t("employee.wpSectionLabel")}
+              onChange={(e) => {
+                setFilterWp(e.target.value);
+                setFilterVerdict(null);
+                if (selectedScenario) closeDetail();
+              }}
+            >
+              <option value="">{t("employee.allWps")}</option>
               {wpValues.map((w) => (
-                <button
-                  key={w}
-                  type="button"
-                  style={{
-                    ...styles.ghostBtn,
-                    padding: "0.3rem 0.65rem",
-                    fontSize: "0.75rem",
-                    ...(filterWp === w ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
-                  }}
-                  onClick={() => {
-                    setFilterWp(w);
-                    setFilterVerdict(null);
-                    if (selectedScenario) closeDetail();
-                  }}
-                >
+                <option key={w} value={w}>
                   {w}
-                </button>
+                </option>
               ))}
-            </div>
+            </select>
           </div>
         ) : null}
 
@@ -1208,7 +1199,7 @@ export default function EmployeeView() {
                         maxWidth: "100%",
                       }}
                     >
-                      ★ {s.title}
+                      ★ {viewFor(s)?.title || s.title}
                     </span>
                   </button>
                 ))
@@ -1246,7 +1237,7 @@ export default function EmployeeView() {
                         maxWidth: "100%",
                       }}
                     >
-                      {s.title}
+                      {viewFor(s)?.title || s.title}
                     </span>
                   </button>
                 ))
@@ -1257,7 +1248,7 @@ export default function EmployeeView() {
         <div style={styles.sidebarGroupScroll}>
         <div style={styles.sidebarGroupLabel}>{t("employee.categoriesSectionLabel")}</div>
         <div style={{ ...styles.catList, padding: 0 }}>
-          {allCategories.map((cat) => (
+          {visibleCategories.map((cat) => (
             <button
               key={cat}
               type="button"
@@ -1290,6 +1281,19 @@ export default function EmployeeView() {
             </button>
           ))}
         </div>
+        {categoriesCollapsible ? (
+          <button
+            type="button"
+            onClick={() => setCategoriesExpanded((v) => !v)}
+            style={{ ...styles.catBtn, color: "#4fa3ff", fontWeight: 600, justifyContent: "center", flexShrink: 0 }}
+          >
+            {categoriesExpanded
+              ? t("employee.showLessCategories")
+              : t("employee.showMoreCategories", {
+                  count: allCategories.length - CATEGORY_COLLAPSE_THRESHOLD,
+                })}
+          </button>
+        ) : null}
         </div>
         <button
           type="button"
@@ -1319,7 +1323,7 @@ export default function EmployeeView() {
             </button>
             <span style={styles.mobileBarTitle}>
               {selectedScenario
-                ? selectedScenario.title
+                ? viewFor(selectedScenario)?.title || selectedScenario.title
                 : searching
                   ? t("employee.allScenarios")
                   : filterVerdict
