@@ -134,6 +134,8 @@
     "zoomIn": "Zmadho",
     "zoomOut": "Zvogëlo",
     "zoomReset": "Rivendos zmadhimin",
+    "fullWidth": "Gjerësi e plotë",
+    "comfortableWidth": "Gjerësi komode",
     "closeImage": "Mbyll"
   },
   "reset": {
@@ -232,6 +234,7 @@
     "subtitle": "Menaxheri i skenarëve",
     "totalScenarios": "Skenarë gjithsej",
     "categories": "Kategoritë",
+    "navScenarios": "Skenarët",
     "navContent": "Përmbajtja",
     "navSettings": "Cilësimet",
     "addScenario": "+ Shto skenar",

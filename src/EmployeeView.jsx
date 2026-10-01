@@ -14,6 +14,8 @@ import {
   toggleFavoriteId,
   readCheckedSteps,
   writeCheckedSteps,
+  readWideLayout,
+  writeWideLayout,
 } from "./recent.js";
 import { styles } from "./styles.js";
 
@@ -444,6 +446,14 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp, i
   const narrow = useIsNarrow();
   const hasSidebar = !narrow && Boolean(acceptanceText);
   const wide = !narrow && (hasSidebar || images.length > 1);
+  const [wideLayout, setWideLayout] = useState(() => readWideLayout());
+  const toggleWideLayout = () => {
+    setWideLayout((v) => {
+      const next = !v;
+      writeWideLayout(next);
+      return next;
+    });
+  };
 
   useEffect(() => {
     setChecked(persistProgress ? readCheckedSteps(scenario.id) : {});
@@ -554,7 +564,13 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp, i
   return (
     <article
       className="print-root"
-      style={wide ? { ...styles.detail, maxWidth: 1120 } : styles.detail}
+      style={
+        wideLayout && !narrow
+          ? { ...styles.detail, maxWidth: "100%" }
+          : wide
+            ? { ...styles.detail, maxWidth: 1120 }
+            : styles.detail
+      }
       aria-labelledby="scenario-detail-title"
     >
       <div
@@ -564,6 +580,18 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp, i
         <button type="button" style={styles.detailBack} onClick={onBack}>
           {t("employee.backAll")}
         </button>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
+        {!narrow ? (
+          <button
+            type="button"
+            aria-label={wideLayout ? t("employee.comfortableWidth") : t("employee.fullWidth")}
+            title={wideLayout ? t("employee.comfortableWidth") : t("employee.fullWidth")}
+            onClick={toggleWideLayout}
+            style={{ ...styles.ghostBtn, padding: "0.4rem 0.75rem" }}
+          >
+            {wideLayout ? "⤡" : "⤢"} {wideLayout ? t("employee.comfortableWidth") : t("employee.fullWidth")}
+          </button>
+        ) : null}
         {onToggleFavorite ? (
           <button
             type="button"
@@ -580,6 +608,7 @@ export function ScenarioDetail({ scenario, view, onBack, onNotify, categoryWp, i
             {isFavorite ? "★" : "☆"} {isFavorite ? t("employee.unfavorite") : t("employee.favorite")}
           </button>
         ) : null}
+        </div>
       </div>
       <div style={styles.detailCat}>{formatCategoryLabel(scenario.category, categoryWp)}</div>
       <h2 id="scenario-detail-title" style={styles.detailTitle}>
@@ -1107,77 +1136,55 @@ export default function EmployeeView() {
           ) : null}
         </div>
         {wpValues.length > 0 ? (
-          <>
-          <div style={{ ...styles.sidebarSectionLabel, marginTop: "0.5rem" }}>{t("employee.wpSectionLabel")}</div>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "0.35rem",
-              padding: "0 1rem 0.85rem",
-            }}
-          >
-            <button
-              type="button"
-              style={{
-                ...styles.ghostBtn,
-                padding: "0.3rem 0.65rem",
-                fontSize: "0.75rem",
-                ...(filterWp === "" ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
-              }}
-              onClick={() => {
-                setFilterWp("");
-                setFilterVerdict(null);
-                if (selectedScenario) closeDetail();
-              }}
-            >
-              {t("employee.allWps")}
-            </button>
-            {wpValues.map((w) => (
+          <div style={styles.sidebarGroup}>
+            <div style={styles.sidebarGroupLabel}>{t("employee.wpSectionLabel")}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
               <button
-                key={w}
                 type="button"
                 style={{
                   ...styles.ghostBtn,
                   padding: "0.3rem 0.65rem",
                   fontSize: "0.75rem",
-                  ...(filterWp === w ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
+                  ...(filterWp === "" ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
                 }}
                 onClick={() => {
-                  setFilterWp(w);
+                  setFilterWp("");
                   setFilterVerdict(null);
                   if (selectedScenario) closeDetail();
                 }}
               >
-                {w}
+                {t("employee.allWps")}
               </button>
-            ))}
+              {wpValues.map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  style={{
+                    ...styles.ghostBtn,
+                    padding: "0.3rem 0.65rem",
+                    fontSize: "0.75rem",
+                    ...(filterWp === w ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
+                  }}
+                  onClick={() => {
+                    setFilterWp(w);
+                    setFilterVerdict(null);
+                    if (selectedScenario) closeDetail();
+                  }}
+                >
+                  {w}
+                </button>
+              ))}
+            </div>
           </div>
-          </>
         ) : null}
 
         {favoriteScenarios.length > 0 ? (
-          <div style={{ padding: "0 0.5rem 0.75rem" }}>
+          <div style={styles.sidebarGroup}>
             <button
               type="button"
               onClick={() => setFavoritesExpanded((v) => !v)}
               aria-expanded={favoritesExpanded}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                width: "100%",
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                padding: "0 0.75rem 0.35rem",
-                fontSize: "0.72rem",
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "#4fa3ff",
-                fontFamily: "inherit",
-              }}
+              style={styles.sidebarGroupToggle}
             >
               <span>{t("employee.favorites", { count: favoriteScenarios.length })}</span>
               <span aria-hidden="true">{favoritesExpanded ? "▲" : "▼"}</span>
@@ -1210,27 +1217,12 @@ export default function EmployeeView() {
         ) : null}
 
         {recentScenarios.length > 0 ? (
-          <div style={{ padding: "0 0.5rem 0.75rem" }}>
+          <div style={styles.sidebarGroup}>
             <button
               type="button"
               onClick={() => setRecentExpanded((v) => !v)}
               aria-expanded={recentExpanded}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                width: "100%",
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                padding: "0 0.75rem 0.35rem",
-                fontSize: "0.72rem",
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "#4fa3ff",
-                fontFamily: "inherit",
-              }}
+              style={styles.sidebarGroupToggle}
             >
               <span>{t("employee.recent", { count: recentScenarios.length })}</span>
               <span aria-hidden="true">{recentExpanded ? "▲" : "▼"}</span>
@@ -1262,8 +1254,9 @@ export default function EmployeeView() {
           </div>
         ) : null}
 
-        <div style={{ ...styles.sidebarSectionLabel, marginTop: "0.5rem" }}>{t("employee.categoriesSectionLabel")}</div>
-        <div style={styles.catList}>
+        <div style={styles.sidebarGroupScroll}>
+        <div style={styles.sidebarGroupLabel}>{t("employee.categoriesSectionLabel")}</div>
+        <div style={{ ...styles.catList, padding: 0 }}>
           {allCategories.map((cat) => (
             <button
               key={cat}
@@ -1296,6 +1289,7 @@ export default function EmployeeView() {
               </span>
             </button>
           ))}
+        </div>
         </div>
         <button
           type="button"

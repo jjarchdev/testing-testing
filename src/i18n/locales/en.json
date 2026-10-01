@@ -134,6 +134,8 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "zoomReset": "Reset zoom",
+    "fullWidth": "Full width",
+    "comfortableWidth": "Comfortable width",
     "closeImage": "Close"
   },
   "login": {
@@ -232,6 +234,7 @@
     "subtitle": "Scenario Manager",
     "totalScenarios": "Total Scenarios",
     "categories": "Categories",
+    "navScenarios": "Scenarios",
     "navContent": "Content",
     "navSettings": "Settings",
     "addScenario": "+ Add Scenario",

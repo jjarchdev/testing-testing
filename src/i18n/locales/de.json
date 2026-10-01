@@ -134,6 +134,8 @@
     "zoomIn": "Vergrößern",
     "zoomOut": "Verkleinern",
     "zoomReset": "Zoom zurücksetzen",
+    "fullWidth": "Volle Breite",
+    "comfortableWidth": "Komfortable Breite",
     "closeImage": "Schließen"
   },
   "reset": {
@@ -232,6 +234,7 @@
     "subtitle": "Szenario-Verwaltung",
     "totalScenarios": "Szenarien gesamt",
     "categories": "Kategorien",
+    "navScenarios": "Szenarien",
     "navContent": "Inhalt",
     "navSettings": "Einstellungen",
     "addScenario": "+ Szenario hinzufügen",

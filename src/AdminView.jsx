@@ -1640,6 +1640,16 @@ export default function AdminView() {
   const workPackageList = workPackages || [];
   const listLoading = scenarios === null || categories === null || workPackages === null;
   const distinctCategoryCount = categoryList.length;
+  const onScenarioList =
+    !showAddForm && !editingScenario && !showCategoryManager && !showWorkPackageManager && !showAdminsPanel;
+  const goToScenarioList = () => {
+    setShowAddForm(false);
+    setEditingScenario(null);
+    setShowCategoryManager(false);
+    setShowWorkPackageManager(false);
+    setShowAdminsPanel(false);
+    setNavOpen(false);
+  };
 
   const filteredScenarios = useMemo(() => {
     const q = scenarioQuery.trim().toLowerCase();
@@ -1974,6 +1984,18 @@ export default function AdminView() {
           </div>
         </div>
         <div style={{ ...styles.sidebarSectionLabel, marginTop: 0 }}>{t("admin.navContent")}</div>
+        <button
+          type="button"
+          style={{
+            ...styles.ghostBtn,
+            margin: "0 1rem 0.5rem",
+            justifyContent: "center",
+            ...(onScenarioList ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
+          }}
+          onClick={goToScenarioList}
+        >
+          {t("admin.navScenarios")}
+        </button>
         <button
           type="button"
           style={{ ...styles.primaryBtn, margin: "0 1rem 0.5rem" }}

@@ -53,6 +53,24 @@ export function toggleFavoriteId(id) {
   return next;
 }
 
+const WIDE_LAYOUT_KEY = "qm_wide_layout";
+
+export function readWideLayout() {
+  try {
+    return localStorage.getItem(WIDE_LAYOUT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeWideLayout(value) {
+  try {
+    localStorage.setItem(WIDE_LAYOUT_KEY, value ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
 const PROGRESS_KEY = "qm_checklist_progress";
 const PROGRESS_MAX_SCENARIOS = 30;
 
