@@ -862,13 +862,13 @@ export default function EmployeeView() {
   const viewFor = (s) => pickTranslation(s, activeLng);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterCategory, setFilterCategory] = useState(ALL_FILTER);
-  const [filterWp, setFilterWp] = useState("");
   const [filterVerdict, setFilterVerdict] = useState(null);
   const [recentIds, setRecentIds] = useState(() => readRecentIds());
   const [recentExpanded, setRecentExpanded] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState(() => readFavoriteIds());
   const [favoritesExpanded, setFavoritesExpanded] = useState(true);
   const [categoriesExpanded, setCategoriesExpanded] = useState(false);
+  const [categoriesSectionOpen, setCategoriesSectionOpen] = useState(true);
   const handleToggleFavorite = (id) => setFavoriteIds(toggleFavoriteId(id));
   const narrow = useIsNarrow();
   const [navOpen, setNavOpen] = useState(false);
@@ -899,23 +899,7 @@ export default function EmployeeView() {
     }
     return m;
   }, [categories]);
-  const wpValues = useMemo(() => {
-    const set = new Set();
-    for (const c of categories || []) {
-      const list = Array.isArray(c.wps) ? c.wps : c.wp ? [c.wp] : [];
-      for (const w of list) {
-        const label = String(w || "").trim();
-        if (label) set.add(label);
-      }
-    }
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [categories]);
-  const categoryCounts = useMemo(() => {
-    const forWp = classifiedList.filter(
-      (s) => !filterWp || categoryWps(s, wpsByLabel).includes(filterWp)
-    );
-    return buildCategoryCounts(forWp);
-  }, [classifiedList, filterWp, wpsByLabel]);
+  const categoryCounts = useMemo(() => buildCategoryCounts(classifiedList), [classifiedList]);
 
   const selectedScenario = useMemo(() => {
     if (scenarioId == null || scenarioId === "") return null;
@@ -925,13 +909,8 @@ export default function EmployeeView() {
   }, [scenarioList, scenarioId]);
 
   const inCategory = useMemo(
-    () =>
-      classifiedList.filter((s) => {
-        const matchesCat = filterCategory === ALL_FILTER || s.category === filterCategory;
-        const matchesWp = !filterWp || categoryWps(s, wpsByLabel).includes(filterWp);
-        return matchesCat && matchesWp;
-      }),
-    [classifiedList, filterCategory, filterWp, wpsByLabel]
+    () => classifiedList.filter((s) => filterCategory === ALL_FILTER || s.category === filterCategory),
+    [classifiedList, filterCategory]
   );
 
   const verdictCounts = useMemo(() => {
@@ -950,8 +929,7 @@ export default function EmployeeView() {
   const filteredScenarios = useMemo(() => {
     return classifiedList.filter((s) => {
       const matchesCat = filterCategory === ALL_FILTER || s.category === filterCategory;
-      const matchesWp = !filterWp || categoryWps(s, wpsByLabel).includes(filterWp);
-      if (!matchesCat || !matchesWp) return false;
+      if (!matchesCat) return false;
       if (searching) {
         const verdictLabel = VERDICT_CODES.includes(s.verdict) ? t(`verdict.${s.verdict}`) : "";
         return scenarioMatchesQuery(s, searchQuery, [verdictLabel, ...categoryWps(s, wpsByLabel)]);
@@ -959,7 +937,7 @@ export default function EmployeeView() {
       if (filterVerdict && s.verdict !== filterVerdict) return false;
       return true;
     });
-  }, [classifiedList, searchQuery, filterCategory, filterWp, filterVerdict, searching, t, wpsByLabel]);
+  }, [classifiedList, searchQuery, filterCategory, filterVerdict, searching, t, wpsByLabel]);
 
   const recentScenarios = useMemo(() => {
     const byId = new Map(classifiedList.map((s) => [s.id, s]));
@@ -991,10 +969,6 @@ export default function EmployeeView() {
   const closeDetail = () => {
     navigate(localePath(lng, "employee"));
   };
-
-  useEffect(() => {
-    if (filterWp && !wpValues.includes(filterWp)) setFilterWp("");
-  }, [filterWp, wpValues]);
 
   useEffect(() => {
     if (!narrow) setNavOpen(false);
@@ -1047,10 +1021,6 @@ export default function EmployeeView() {
           setFilterVerdict(null);
           return;
         }
-        if (filterWp) {
-          setFilterWp("");
-          return;
-        }
         if (filterCategory !== ALL_FILTER) {
           setFilterCategory(ALL_FILTER);
         }
@@ -1065,12 +1035,11 @@ export default function EmployeeView() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navOpen, selectedScenario, narrow, lng, searching, filterVerdict, filterCategory, filterWp]);
+  }, [navOpen, selectedScenario, narrow, lng, searching, filterVerdict, filterCategory]);
 
   const emptyMessage = () => {
     if (searching) return t("employee.emptySearch");
     if (filterVerdict) return t("employee.emptyVerdict");
-    if (filterWp) return t("employee.emptyWp");
     if (filterCategory !== ALL_FILTER) return t("employee.emptyCategory");
     if (classifiedList.length > 0) return t("employee.emptyLanguage");
     return t("employee.emptyPublished");
@@ -1146,29 +1115,6 @@ export default function EmployeeView() {
             </button>
           ) : null}
         </div>
-        {wpValues.length > 0 ? (
-          <div style={styles.sidebarGroup}>
-            <div style={styles.sidebarGroupLabel}>{t("employee.wpSectionLabel")}</div>
-            <select
-              style={styles.select}
-              value={filterWp}
-              aria-label={t("employee.wpSectionLabel")}
-              onChange={(e) => {
-                setFilterWp(e.target.value);
-                setFilterVerdict(null);
-                if (selectedScenario) closeDetail();
-              }}
-            >
-              <option value="">{t("employee.allWps")}</option>
-              {wpValues.map((w) => (
-                <option key={w} value={w}>
-                  {w}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-
         {favoriteScenarios.length > 0 ? (
           <div style={styles.sidebarGroup}>
             <button
@@ -1245,8 +1191,18 @@ export default function EmployeeView() {
           </div>
         ) : null}
 
-        <div style={styles.sidebarGroupScroll}>
-        <div style={styles.sidebarGroupLabel}>{t("employee.categoriesSectionLabel")}</div>
+        <div style={categoriesSectionOpen ? styles.sidebarGroupScroll : styles.sidebarGroup}>
+        <button
+          type="button"
+          onClick={() => setCategoriesSectionOpen((v) => !v)}
+          aria-expanded={categoriesSectionOpen}
+          style={styles.sidebarGroupToggle}
+        >
+          <span>{t("employee.categoriesSectionLabel")}</span>
+          <span aria-hidden="true">{categoriesSectionOpen ? "▲" : "▼"}</span>
+        </button>
+        {categoriesSectionOpen ? (
+          <>
         <div style={{ ...styles.catList, padding: 0 }}>
           {visibleCategories.map((cat) => (
             <button
@@ -1293,6 +1249,8 @@ export default function EmployeeView() {
                   count: allCategories.length - CATEGORY_COLLAPSE_THRESHOLD,
                 })}
           </button>
+        ) : null}
+          </>
         ) : null}
         </div>
         <button
