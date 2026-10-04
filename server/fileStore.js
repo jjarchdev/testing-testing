@@ -8,7 +8,7 @@ import {
   sanitizeWpList,
   slugifyLabel,
 } from "../shared/categoryMap.mjs";
-import { normalizeScenario } from "../shared/scenarioSchema.mjs";
+import { isScenarioV2Id, normalizeScenario } from "../shared/scenarioSchema.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
@@ -38,6 +38,7 @@ function defaultPayload() {
     categories: [],
     workPackages: [],
     scenarios: [],
+    scenariosV2: [],
   };
 }
 
@@ -134,6 +135,10 @@ async function loadStore() {
     Array.isArray(data.scenarios) ? data.scenarios : []
   );
   if (!scenarios) return null;
+  const scenariosV2 = parseScenarioList(
+    Array.isArray(data.scenariosV2) ? data.scenariosV2 : []
+  );
+  if (!scenariosV2) return null;
 
   let categories = parseCategoryList(
     Array.isArray(data.categories) ? data.categories : []
@@ -159,7 +164,7 @@ async function loadStore() {
   return {
     categories,
     workPackages,
-    scenarios: withCategoryWps(scenarios, categories),
+    scenarios: [...withCategoryWps(scenarios, categories), ...scenariosV2],
   };
 }
 
@@ -172,20 +177,28 @@ async function persistStore({ categories, workPackages, scenarios }) {
     throw new Error("Invalid categories");
   }
   const normalizedWps = collectWorkPackages(normalizedCategories, workPackages || []);
-  const normalizedScenarios = withCategoryWps(scenarios, normalizedCategories);
-  if (normalizedScenarios.length !== scenarios.length) {
+  const normalizedLegacy = withCategoryWps(
+    scenarios.filter((s) => !isScenarioV2Id(s.id)),
+    normalizedCategories
+  );
+  const normalizedV2 = scenarios
+    .filter((s) => isScenarioV2Id(s.id))
+    .map((s) => normalizeScenario(s))
+    .filter(Boolean);
+  if (normalizedLegacy.length + normalizedV2.length !== scenarios.length) {
     throw new Error("Invalid scenarios");
   }
   await writeRaw({
     v: STORAGE_VERSION,
     categories: normalizedCategories,
     workPackages: normalizedWps,
-    scenarios: normalizedScenarios,
+    scenarios: normalizedLegacy,
+    scenariosV2: normalizedV2,
   });
   return {
     categories: normalizedCategories,
     workPackages: normalizedWps,
-    scenarios: normalizedScenarios,
+    scenarios: [...normalizedLegacy, ...normalizedV2],
   };
 }
 
@@ -208,17 +221,6 @@ export async function writeScenariosToDisk(scenarios) {
 export async function readCategoriesFromDisk() {
   const store = await loadStore();
   return store?.categories ?? null;
-}
-
-export async function writeCategoriesToDisk(categories) {
-  const store = await loadStore();
-  if (!store) throw new Error("Invalid scenarios file");
-  const result = await persistStore({
-    categories,
-    workPackages: store.workPackages,
-    scenarios: store.scenarios,
-  });
-  return result.categories;
 }
 
 export async function readWorkPackagesFromDisk() {
@@ -389,10 +391,17 @@ export async function updateWorkPackageOnDisk(slug, payload) {
           ...c,
           wps: (c.wps || []).map((l) => (l === current.label ? nextLabel : l)),
         }));
+  const scenarios =
+    nextLabel === current.label
+      ? store.scenarios
+      : store.scenarios.map((s) => ({
+          ...s,
+          wps: (s.wps || []).map((l) => (l === current.label ? nextLabel : l)),
+        }));
   const result = await persistStore({
     categories,
     workPackages,
-    scenarios: store.scenarios,
+    scenarios,
   });
   return result.workPackages.find((w) => w.slug === slug) || updated;
 }
@@ -402,7 +411,9 @@ export async function deleteWorkPackageOnDisk(slug) {
   if (!store) throw new Error("Read failed");
   const wp = store.workPackages.find((w) => w.slug === slug);
   if (!wp) return { deleted: false, reason: "not_found" };
-  const count = store.categories.filter((c) => (c.wps || []).includes(wp.label)).length;
+  const count =
+    store.categories.filter((c) => (c.wps || []).includes(wp.label)).length +
+    store.scenarios.filter((s) => (s.wps || []).includes(wp.label)).length;
   if (count > 0) {
     return { deleted: false, reason: "in_use", count };
   }
@@ -412,15 +423,6 @@ export async function deleteWorkPackageOnDisk(slug) {
     scenarios: store.scenarios,
   });
   return { deleted: true };
-}
-
-export function resolveCategoryLabelOnDisk(categories, labelOrSlug) {
-  const value = String(labelOrSlug || "").trim();
-  const byLabel = categories.find((c) => c.label === value);
-  if (byLabel) return byLabel.label;
-  const bySlug = categories.find((c) => c.slug === value);
-  if (bySlug) return bySlug.label;
-  throw new Error(`Unknown category: ${value}`);
 }
 
 export function withPublishedDefault(scenario, isPublished = true) {

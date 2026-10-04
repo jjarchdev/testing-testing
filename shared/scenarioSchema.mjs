@@ -260,6 +260,20 @@ export function isScenarioV2Id(id) {
   return Number(id) >= SCENARIO_V2_ID_START;
 }
 
+function toPositiveInt(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+export function withoutReplacedLegacy(scenarios, { publishedOnly }) {
+  const replaced = new Set(
+    scenarios
+      .filter((s) => s.replaces_legacy_id && (!publishedOnly || s.is_published !== false))
+      .map((s) => s.replaces_legacy_id)
+  );
+  return scenarios.filter((s) => isScenarioV2Id(s.id) || !replaced.has(s.id));
+}
+
 export function legacyFieldsFromSituationPayload(payload) {
   const situation = payload.situations[0];
   const translations = {};
@@ -423,6 +437,7 @@ export function normalizeScenario(s, options = {}) {
     category_wps: sanitizeWpList(s.category_wps ?? s.category_wp),
     wps: sanitizeWpList(s.wps),
     situations: sanitizeSituations(s.situations, options),
+    replaces_legacy_id: toPositiveInt(s.replaces_legacy_id),
   };
   out.category_wp = out.category_wps.join(", ");
   if (typeof s.is_published === "boolean") {

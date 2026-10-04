@@ -153,17 +153,3 @@ export async function revokeAdmin(email) {
   if (error) throw error;
   return { ok: true };
 }
-
-export async function isAdminsTableReady() {
-  if (!isSupabaseConfigured()) return true;
-  try {
-    const sb = getSupabase();
-    const { error } = await sb.from("app_admins").select("email").limit(1);
-    if (!error) return true;
-    const msg = String(error.message || "");
-    if (/app_admins|relation|42P01/i.test(msg)) return false;
-    return true;
-  } catch {
-    return true;
-  }
-}

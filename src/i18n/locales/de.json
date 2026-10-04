@@ -383,8 +383,9 @@
     "previewUnavailable": "Die Vorschau braucht einen Titel und eine vollständige Situation in dieser Sprache.",
     "wpsPlaceholder": "Arbeitspakete auswählen",
     "wpsSelected": "{{count}} Arbeitspakete ausgewählt",
-    "wpsLegacy": "Die Arbeitspakete dieses älteren Szenarios stammen aus seiner ursprünglichen Kategorie und können hier nicht geändert werden.",
-    "legacyNote": "Dieses Szenario wurde angelegt, bevor es Situationen gab, und enthält eine einzelne Situation. Für mehrere Situationen lege ein neues Szenario an."
+    "wpsLegacy": "Dieses ältere Szenario übernimmt seine Arbeitspakete aus der ursprünglichen Kategorie. Mit „Situation hinzufügen“ wechselst du ins neue Format, in dem du sie selbst wählst.",
+    "legacyNote": "Dieses Szenario wurde angelegt, bevor es Situationen gab, und enthält eine einzelne Situation. Mit „Situation hinzufügen“ fügst du weitere hinzu; es wird dann im neuen Format gespeichert.",
+    "convertNote": "Beim Speichern wird dieses Szenario als Kopie im neuen Format abgelegt. Der ursprüngliche ältere Eintrag bleibt unverändert in der Datenbank und wird in den Listen ausgeblendet. Löschst du das neue, kommt das Original zurück."
   },
   "confluence": {
     "sectionLabel": "Verknüpfte Confluence-Seite",

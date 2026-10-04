@@ -9,12 +9,7 @@ import ScenarioForm from "./ScenarioForm.jsx";
 import { localePath } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
 import { styles } from "./styles.js";
-import {
-  VERDICT_CODES,
-  isScenarioV2Id,
-  scenarioToEditable,
-  scenarioWpList,
-} from "../shared/scenarioSchema.mjs";
+import { VERDICT_CODES, scenarioToEditable, scenarioWpList } from "../shared/scenarioSchema.mjs";
 
 const VERDICT_COLORS = {
   to_be_rejected: "#e74c3c",
@@ -335,8 +330,9 @@ export default function AdminView() {
       notify(t("toast.notSignedIn"), "error");
       return;
     }
+    const updating = Boolean(editingScenario) && !data.replaces_legacy_id;
     try {
-      const res = editingScenario
+      const res = updating
         ? await apiFetchWithAuth(`/api/scenarios/${editingScenario.id}`, {
             method: "PUT",
             body: JSON.stringify(data),
@@ -355,7 +351,9 @@ export default function AdminView() {
       const saved = payload?.scenario;
       if (saved) {
         setScenarios((prev) =>
-          editingScenario ? prev.map((s) => (s.id === saved.id ? saved : s)) : [...prev, saved]
+          updating
+            ? prev.map((s) => (s.id === saved.id ? saved : s))
+            : [...prev.filter((s) => s.id !== data.replaces_legacy_id), saved]
         );
       } else {
         await loadScenariosFromServer();
@@ -894,15 +892,13 @@ export default function AdminView() {
                             </button>
                           </div>
                         ))}
-                        {isScenarioV2Id(row.id) ? (
-                          <button
-                            type="button"
-                            style={{ ...styles.ghostBtn, marginTop: "0.5rem", padding: "0.35rem 0.85rem", fontSize: "0.85rem" }}
-                            onClick={() => openScenarioEditor(row, { addSituation: true })}
-                          >
-                            {t("admin.addSituation")}
-                          </button>
-                        ) : null}
+                        <button
+                          type="button"
+                          style={{ ...styles.ghostBtn, marginTop: "0.5rem", padding: "0.35rem 0.85rem", fontSize: "0.85rem" }}
+                          onClick={() => openScenarioEditor(row, { addSituation: true })}
+                        >
+                          {t("admin.addSituation")}
+                        </button>
                       </div>
                     ) : null}
                   </div>

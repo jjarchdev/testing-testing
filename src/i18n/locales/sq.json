@@ -383,8 +383,9 @@
     "previewUnavailable": "Pamja paraprake kërkon një titull dhe një situatë të plotë në këtë gjuhë.",
     "wpsPlaceholder": "Zgjidh paketat e punës",
     "wpsSelected": "{{count}} paketa pune të zgjedhura",
-    "wpsLegacy": "Paketat e punës të këtij skenari më të vjetër vijnë nga kategoria e tij origjinale dhe nuk mund të ndryshohen këtu.",
-    "legacyNote": "Ky skenar u krijua para se të ekzistonin situatat dhe përmban një situatë të vetme. Për disa situata, krijo një skenar të ri."
+    "wpsLegacy": "Ky skenar më i vjetër i merr paketat e punës nga kategoria origjinale. Përdor “Shto situatë” për ta kaluar në formatin e ri, ku i zgjedh vetë.",
+    "legacyNote": "Ky skenar u krijua para se të ekzistonin situatat dhe përmban një situatë të vetme. Përdor “Shto situatë” për të shtuar të tjera: do të ruhet në formatin e ri.",
+    "convertNote": "Kur ruan, ky skenar ruhet në formatin e ri si kopje. Hyrja origjinale e vjetër mbetet e paprekur në bazën e të dhënave dhe fshihet nga listat. Nëse fshin të riun, origjinali kthehet."
   },
   "confluence": {
     "sectionLabel": "Faqe Confluence e lidhur",

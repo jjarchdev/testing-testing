@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import { getSupabase, isSupabaseConfigured } from "./db.js";
+import { scenarioImageUrlList } from "../shared/scenarioSchema.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
@@ -148,14 +149,7 @@ export async function saveUploadedImage(file) {
 }
 
 export function imageUrlsFromScenario(scenario) {
-  if (!scenario) return [];
-  if (Array.isArray(scenario.image_urls) && scenario.image_urls.length) {
-    return scenario.image_urls.filter((u) => typeof u === "string" && u.trim());
-  }
-  if (typeof scenario.image_url === "string" && scenario.image_url.trim()) {
-    return [scenario.image_url.trim()];
-  }
-  return [];
+  return scenario ? scenarioImageUrlList(scenario) : [];
 }
 
 export function urlsRemovedFromScenario(previous, nextUrls) {

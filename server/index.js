@@ -43,21 +43,23 @@ const {
   insertWorkPackageOnDisk,
   updateWorkPackageOnDisk,
   deleteWorkPackageOnDisk,
-  resolveCategoryLabelOnDisk,
   withPublishedDefault,
 } = await import("./fileStore.js");
 const {
   normalizeScenario,
-  sanitizeImageUrls,
-  sanitizeImageCaptions,
+  sanitizeSituations,
   sanitizeTranslations,
   isLocalUploadPath,
+  isScenarioV2Id,
+  legacyFieldsFromSituationPayload,
   MAX_SCENARIO_IMAGES,
+  MAX_SITUATIONS,
+  SCENARIO_V2_ID_START,
+  withoutReplacedLegacy,
   SUPPORTED_SCENARIO_LOCALES,
   sanitizeConfluencePageId,
   sanitizeConfluenceUrl,
   parseVerdict,
-  coerceSolutionAsChecklist,
 } = await import("../shared/scenarioSchema.mjs");
 const { normalizeCategory, normalizeWorkPackage, sanitizeWp, sanitizeWpList } = await import("../shared/categoryMap.mjs");
 const {
@@ -203,117 +205,113 @@ async function listScenariosForRequest(req) {
   }
   const list = await readScenariosFromDisk();
   if (!list) return null;
-  if (admin) return list;
-  return list.filter((s) => s.is_published !== false);
+  if (admin) return withoutReplacedLegacy(list, { publishedOnly: false });
+  return withoutReplacedLegacy(
+    list.filter((s) => s.is_published !== false),
+    { publishedOnly: true }
+  );
 }
 
-function parseScenarioBody(body) {
-  const tags = Array.isArray(body?.tags)
-    ? body.tags.map((t) => String(t).trim()).filter(Boolean)
-    : typeof body?.tags === "string"
-      ? body.tags
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean)
-      : [];
+function codedError(message, code) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
 
+function situationIsComplete(situation, lng) {
+  const t = situation.translations?.[lng];
+  return Boolean(t && (t.scenario || "").trim() && (t.solution || "").trim());
+}
+
+function parseScenarioBody(body, { legacy = false } = {}) {
   const allowLocalUploads = !isSupabaseConfigured();
-  const rawList = Array.isArray(body?.image_urls)
-    ? body.image_urls
-    : null;
-  const legacySingle =
-    typeof body?.image_url === "string" && body.image_url.trim()
-      ? body.image_url.trim()
-      : "";
-  const candidates =
-    rawList && rawList.length > 0
-      ? rawList
-      : legacySingle
-        ? [legacySingle]
-        : rawList || [];
-
-  if (candidates.length > MAX_SCENARIO_IMAGES) {
-    const err = new Error(`At most ${MAX_SCENARIO_IMAGES} images are allowed per scenario`);
-    err.code = "TOO_MANY_IMAGES";
-    throw err;
+  const rawSituations = Array.isArray(body?.situations) ? body.situations : [];
+  if (!rawSituations.length) {
+    throw codedError("Add at least one situation", "SITUATION_REQUIRED");
+  }
+  if (legacy && rawSituations.length !== 1) {
+    throw codedError("An existing scenario holds exactly one situation", "LEGACY_SITUATION_COUNT");
+  }
+  if (rawSituations.length > MAX_SITUATIONS) {
+    throw codedError(`At most ${MAX_SITUATIONS} situations are allowed per scenario`, "TOO_MANY_SITUATIONS");
   }
 
-  if (isSupabaseConfigured() && candidates.some((u) => isLocalUploadPath(u))) {
-    const err = new Error(
-      "Local /uploads/ image paths do not work in production. Use Upload image so the file is stored in Supabase Storage."
+  for (const raw of rawSituations) {
+    const verdictParsed = parseVerdict(raw?.verdict);
+    if (verdictParsed === undefined) throw codedError("Invalid verdict", "INVALID_VERDICT");
+    if (!verdictParsed) throw codedError("Verdict required", "VERDICT_REQUIRED");
+    const urls = Array.isArray(raw?.image_urls) ? raw.image_urls : [];
+    if (urls.length > MAX_SCENARIO_IMAGES) {
+      throw codedError(
+        `At most ${MAX_SCENARIO_IMAGES} images are allowed per situation`,
+        "TOO_MANY_IMAGES"
+      );
+    }
+    if (isSupabaseConfigured() && urls.some((u) => isLocalUploadPath(u))) {
+      throw codedError(
+        "Local /uploads/ image paths do not work in production. Use Upload image so the file is stored in Supabase Storage.",
+        "LEGACY_UPLOAD_PATH"
+      );
+    }
+  }
+
+  const situations = sanitizeSituations(rawSituations, { allowLocalUploads });
+  if (
+    situations.length !== rawSituations.length ||
+    !situations.every((s) => SUPPORTED_SCENARIO_LOCALES.some((lng) => situationIsComplete(s, lng)))
+  ) {
+    throw codedError(
+      "Every situation needs its situation text and solution in at least one language",
+      "SITUATION_INCOMPLETE"
     );
-    err.code = "LEGACY_UPLOAD_PATH";
-    throw err;
   }
 
-  const image_urls = sanitizeImageUrls(candidates, { allowLocalUploads });
-  const image_captions = sanitizeImageCaptions(body?.image_captions, image_urls);
+  const wps = legacy ? [] : sanitizeWpList(body?.wps);
+  if (!legacy && !wps.length) throw codedError("Select at least one work package", "WP_REQUIRED");
+
+  const replacesRaw = body?.replaces_legacy_id;
+  const replaces = legacy || replacesRaw == null || replacesRaw === "" ? null : Number(replacesRaw);
+  if (replaces != null && (!Number.isInteger(replaces) || replaces < 1 || isScenarioV2Id(replaces))) {
+    throw codedError("Invalid scenario to replace", "INVALID_REPLACES");
+  }
+
   const translations = sanitizeTranslations(body?.translations);
   const primaryLanguage =
     typeof body?.primary_language === "string" &&
     SUPPORTED_SCENARIO_LOCALES.includes(body.primary_language)
       ? body.primary_language
       : null;
-
-  const translationOrder = [primaryLanguage, "en", "de", "sq"].filter(
+  const order = [primaryLanguage, ...SUPPORTED_SCENARIO_LOCALES].filter(
     (l, i, arr) => l && arr.indexOf(l) === i
   );
-  let derivedTitle = typeof body?.title === "string" ? body.title : "";
-  let derivedScenario = typeof body?.scenario === "string" ? body.scenario : "";
-  let derivedSolution = typeof body?.solution === "string" ? body.solution : "";
-  let derivedTags = tags;
-  if (!derivedTitle.trim() || !derivedScenario.trim() || !derivedSolution.trim()) {
-    for (const lng of translationOrder) {
-      const slot = translations[lng];
-      if (!slot) continue;
-      if (!derivedTitle.trim() && slot.title) derivedTitle = slot.title;
-      if (!derivedScenario.trim() && slot.scenario) derivedScenario = slot.scenario;
-      if (!derivedSolution.trim() && slot.solution) derivedSolution = slot.solution;
-      if (derivedTags.length === 0 && slot.tags?.length) derivedTags = slot.tags;
-      if (derivedTitle.trim() && derivedScenario.trim() && derivedSolution.trim()) break;
-    }
+  const lng = order.find(
+    (l) => (translations[l]?.title || "").trim() && situations.some((s) => situationIsComplete(s, l))
+  );
+  if (!lng) {
+    throw codedError("A title and at least one complete situation are required in one language", "TITLE_REQUIRED");
   }
+  const first = situations.find((s) => situationIsComplete(s, lng));
 
-  const verdictParsed = parseVerdict(body?.verdict);
-  if (verdictParsed === undefined) {
-    const err = new Error("Invalid verdict");
-    err.code = "INVALID_VERDICT";
-    throw err;
-  }
-  if (!verdictParsed) {
-    const err = new Error("Verdict required");
-    err.code = "VERDICT_REQUIRED";
-    throw err;
-  }
-  const verdict = verdictParsed;
-
-  const row = {
-    category: body?.category,
-    title: derivedTitle,
-    scenario: derivedScenario,
-    solution: derivedSolution,
-    tags: derivedTags,
-    image_urls,
-    image_url: image_urls[0] || "",
-    image_captions,
-    translations,
-    primary_language: primaryLanguage,
-    confluence_page_id: sanitizeConfluencePageId(body?.confluence_page_id),
-    confluence_page_url: sanitizeConfluenceUrl(body?.confluence_page_url),
-    confluence_page_title:
-      typeof body?.confluence_page_title === "string"
-        ? body.confluence_page_title.slice(0, 240)
-        : "",
-    is_published: body?.is_published !== false && body?.is_published !== "false",
-    solution_as_checklist: coerceSolutionAsChecklist(body?.solution_as_checklist),
-    acceptance_as_checklist: coerceSolutionAsChecklist(body?.acceptance_as_checklist),
-    verdict,
-  };
   const normalized = normalizeScenario(
     {
       id: 1,
-      ...row,
-      tags: derivedTags,
+      category: "",
+      title: translations[lng].title,
+      scenario: first.translations[lng].scenario,
+      solution: first.translations[lng].solution,
+      tags: translations[lng].tags || [],
+      translations,
+      wps,
+      situations,
+      replaces_legacy_id: replaces,
+      confluence_page_id: sanitizeConfluencePageId(body?.confluence_page_id),
+      confluence_page_url: sanitizeConfluenceUrl(body?.confluence_page_url),
+      confluence_page_title:
+        typeof body?.confluence_page_title === "string"
+          ? body.confluence_page_title.slice(0, 240)
+          : "",
+      is_published: body?.is_published !== false && body?.is_published !== "false",
+      verdict: situations[0].verdict,
     },
     { allowLocalUploads }
   );
@@ -698,7 +696,7 @@ app.delete("/api/work-packages/:slug", requireAuth, async (req, res) => {
     }
     if (result.reason === "in_use") {
       return res.status(409).json({
-        error: `WP is used by ${result.count} categor${result.count === 1 ? "y" : "ies"}`,
+        error: `WP is still used by ${result.count} scenario${result.count === 1 ? "" : "s"} or categories`,
         count: result.count,
       });
     }
@@ -723,6 +721,12 @@ app.get("/api/scenarios", async (req, res) => {
   }
 });
 
+async function assertKnownWpsOnDisk(labels) {
+  const known = new Set(((await readWorkPackagesFromDisk()) || []).map((w) => w.label));
+  const unknown = labels.find((w) => !known.has(w));
+  if (unknown) throw new Error(`Unknown WP: ${unknown}`);
+}
+
 app.post("/api/scenarios", requireAuth, async (req, res) => {
   if (requireSupabaseInProd(res)) return;
   try {
@@ -734,15 +738,21 @@ app.post("/api/scenarios", requireAuth, async (req, res) => {
       const scenario = await insertScenario(payload);
       return res.status(201).json({ scenario });
     }
-    const categories = await readCategoriesFromDisk();
-    if (!categories) return res.status(500).json({ error: "Read failed" });
-    const categoryLabel = resolveCategoryLabelOnDisk(categories, payload.category);
+    await assertKnownWpsOnDisk(payload.wps);
     const list = (await readScenariosFromDisk()) || [];
-    const nextId = list.reduce((max, s) => Math.max(max, s.id), 0) + 1;
-    const scenario = withPublishedDefault(
-      { id: nextId, ...payload, category: categoryLabel },
-      payload.is_published !== false
-    );
+    if (payload.replaces_legacy_id) {
+      const target = list.find((s) => s.id === payload.replaces_legacy_id);
+      if (!target || isScenarioV2Id(target.id)) throw new Error("The scenario to replace was not found");
+      if (list.some((s) => s.replaces_legacy_id === payload.replaces_legacy_id)) {
+        throw new Error("This scenario has already been converted");
+      }
+    }
+    const nextId =
+      list.reduce(
+        (max, s) => (isScenarioV2Id(s.id) ? Math.max(max, s.id) : max),
+        SCENARIO_V2_ID_START - 1
+      ) + 1;
+    const scenario = withPublishedDefault({ id: nextId, ...payload }, payload.is_published !== false);
     const written = await writeScenariosToDisk([...list, scenario]);
     const saved = written.find((s) => s.id === nextId) || scenario;
     res.status(201).json({ scenario: saved });
@@ -759,7 +769,8 @@ app.put("/api/scenarios/:id", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Invalid id" });
   }
   try {
-    const payload = parseScenarioBody(req.body);
+    const legacy = !isScenarioV2Id(id);
+    const payload = parseScenarioBody(req.body, { legacy });
     if (!payload) {
       return res.status(400).json({ error: "Invalid scenario" });
     }
@@ -768,22 +779,30 @@ app.put("/api/scenarios/:id", requireAuth, async (req, res) => {
       if (!scenario) return res.status(404).json({ error: "Not found" });
       return res.json({ scenario });
     }
-    const categories = await readCategoriesFromDisk();
-    if (!categories) return res.status(500).json({ error: "Read failed" });
-    const categoryLabel = resolveCategoryLabelOnDisk(categories, payload.category);
+    if (!legacy) await assertKnownWpsOnDisk(payload.wps);
     const list = (await readScenariosFromDisk()) || [];
     const previous = list.find((s) => s.id === id);
     if (!previous) {
       return res.status(404).json({ error: "Not found" });
     }
-    const scenario = withPublishedDefault(
-      { id, ...payload, category: categoryLabel },
-      payload.is_published !== false
-    );
+    const scenario = legacy
+      ? withPublishedDefault(
+          {
+            ...previous,
+            ...legacyFieldsFromSituationPayload(payload),
+            confluence_page_id: payload.confluence_page_id,
+            confluence_page_url: payload.confluence_page_url,
+            confluence_page_title: payload.confluence_page_title,
+            is_published: payload.is_published,
+            id,
+          },
+          payload.is_published !== false
+        )
+      : withPublishedDefault({ id, ...payload }, payload.is_published !== false);
     const next = list.map((s) => (s.id === id ? scenario : s));
     const written = await writeScenariosToDisk(next);
-    await removeStoredImages(urlsRemovedFromScenario(previous, scenario.image_urls));
     const saved = written.find((s) => s.id === id) || scenario;
+    await removeStoredImages(urlsRemovedFromScenario(previous, imageUrlsFromScenario(saved)));
     res.json({ scenario: saved });
   } catch (e) {
     console.error("[handler] update:", e?.message || e);
@@ -981,7 +1000,7 @@ app.get("/api/admin/export", requireAuth, async (_req, res) => {
     const [categories, workPackages, scenarios] = await Promise.all([
       isSupabaseConfigured() ? listCategories() : readCategoriesFromDisk(),
       isSupabaseConfigured() ? listWorkPackages() : readWorkPackagesFromDisk(),
-      isSupabaseConfigured() ? listAllScenarios() : readScenariosFromDisk(),
+      isSupabaseConfigured() ? listAllScenarios({ includeReplaced: true }) : readScenariosFromDisk(),
     ]);
     let confluence = { connected: false };
     try {

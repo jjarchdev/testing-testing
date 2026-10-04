@@ -102,7 +102,7 @@ function languageHasCompleteSituation(form, lng) {
   );
 }
 
-function formToPayload(form, enabledLangs, primaryLanguage) {
+function formToPayload(form, enabledLangs, primaryLanguage, replacesLegacyId) {
   const translations = {};
   for (const lng of enabledLangs) {
     const title = form.translations[lng].title.trim();
@@ -133,6 +133,7 @@ function formToPayload(form, enabledLangs, primaryLanguage) {
     confluence_page_url: form.confluence_page_url,
     confluence_page_title: form.confluence_page_title,
     is_published: form.is_published,
+    ...(replacesLegacyId ? { replaces_legacy_id: replacesLegacyId } : {}),
   };
 }
 
@@ -840,7 +841,9 @@ export default function ScenarioForm({
   const { t, i18n } = useTranslation();
   const { notify, workPackages } = useAppData();
   const narrow = useIsNarrow();
-  const legacyMode = Boolean(initial) && !isScenarioV2Id(initial.id);
+  const isLegacyScenario = Boolean(initial) && !isScenarioV2Id(initial.id);
+  const [converting, setConverting] = useState(isLegacyScenario && Boolean(addSituation));
+  const legacyMode = isLegacyScenario && !converting;
   const [baseline] = useState(() => buildForm(initial));
   const baselineJson = useMemo(() => JSON.stringify(baseline), [baseline]);
   const [form, setForm] = useState(() =>
@@ -968,6 +971,7 @@ export default function ScenarioForm({
   const addNewSituation = () => {
     const created = blankSituation();
     setFormError("");
+    if (isLegacyScenario) setConverting(true);
     setForm((f) => ({ ...f, situations: [...f.situations, created] }));
     setOpenIds((prev) => new Set(prev).add(created.id));
     requestAnimationFrame(() => {
@@ -1033,7 +1037,14 @@ export default function ScenarioForm({
     setFormError("");
     setBusy(true);
     try {
-      await onSave(formToPayload(form, enabledLangs, complete.includes(activeLang) ? activeLang : complete[0]));
+      await onSave(
+        formToPayload(
+          form,
+          enabledLangs,
+          complete.includes(activeLang) ? activeLang : complete[0],
+          converting ? initial.id : null
+        )
+      );
     } finally {
       setBusy(false);
     }
@@ -1106,6 +1117,22 @@ export default function ScenarioForm({
             {label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={addNewSituation}
+          disabled={locked}
+          style={{
+            ...styles.ghostBtn,
+            padding: "0.35rem 0.75rem",
+            fontSize: "0.8rem",
+            whiteSpace: "nowrap",
+            flex: "none",
+            border: "1px dashed #4fa3ff",
+            color: "#4fa3ff",
+          }}
+        >
+          {t("scenarioForm.addSituation")}
+        </button>
       </nav>
 
       {formError ? (
@@ -1250,6 +1277,22 @@ export default function ScenarioForm({
         <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>
           {legacyMode ? t("scenarioForm.legacyNote") : t("scenarioForm.situationsHelp")}
         </p>
+        {converting ? (
+          <div
+            role="note"
+            style={{
+              background: "rgba(79, 163, 255, 0.1)",
+              border: "1px solid rgba(79, 163, 255, 0.35)",
+              color: "#b9d6ff",
+              padding: "0.65rem 1rem",
+              borderRadius: 8,
+              fontSize: "0.85rem",
+              marginBottom: "0.75rem",
+            }}
+          >
+            {t("scenarioForm.convertNote")}
+          </div>
+        ) : null}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           {form.situations.map((situation, index) => (
             <SituationEditor
@@ -1274,16 +1317,14 @@ export default function ScenarioForm({
             />
           ))}
         </div>
-        {legacyMode ? null : (
-          <button
-            type="button"
-            style={{ ...styles.ghostBtn, marginTop: "0.85rem", borderStyle: "dashed" }}
-            disabled={locked}
-            onClick={addNewSituation}
-          >
-            {t("scenarioForm.addSituation")}
-          </button>
-        )}
+        <button
+          type="button"
+          style={{ ...styles.ghostBtn, marginTop: "0.85rem", border: "1px dashed #1a2a3a" }}
+          disabled={locked}
+          onClick={addNewSituation}
+        >
+          {t("scenarioForm.addSituation")}
+        </button>
       </div>
 
       <div ref={sectionRefs.publish}>

@@ -383,8 +383,9 @@
     "previewUnavailable": "Preview needs a title and one complete situation in this language.",
     "wpsPlaceholder": "Select work packages",
     "wpsSelected": "{{count}} work packages selected",
-    "wpsLegacy": "Work packages of this older scenario come from its original category and can't be changed here.",
-    "legacyNote": "This scenario was created before situations existed and holds a single situation. To use several situations, create a new scenario."
+    "wpsLegacy": "This older scenario takes its work packages from its original category. Use “Add situation” to switch it to the new format, where you can choose them yourself.",
+    "legacyNote": "This scenario was created before situations existed and holds a single situation. Use “Add situation” to add more: it will then be saved in the new format.",
+    "convertNote": "On save, this scenario is stored in the new format as a copy. The original older entry stays untouched in the database and is hidden from the lists. Deleting the new one brings the original back."
   },
   "confluence": {
     "sectionLabel": "Linked Confluence page",

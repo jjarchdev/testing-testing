@@ -7,17 +7,36 @@ import {
   slugifyLabel,
 } from "../shared/categoryMap.mjs";
 import {
+  isScenarioV2Id,
+  legacyFieldsFromSituationPayload,
   normalizeScenario,
   sanitizeImageUrls,
-  sanitizeImageCaptions,
-  sanitizeTranslations,
-  SUPPORTED_SCENARIO_LOCALES,
+  withoutReplacedLegacy,
 } from "../shared/scenarioSchema.mjs";
+
+const MIGRATION_HINT =
+  "The database is missing the new scenario tables. Run supabase/migrations/010_situations.sql and 011_scenarios_v2_replaces.sql in the Supabase SQL editor, then try again.";
 
 function isMissingColumnError(error) {
   if (!error) return false;
-  if (error.code === "42703") return true;
-  return /column .* does not exist/i.test(String(error.message || ""));
+  if (error.code === "42703" || error.code === "PGRST204") return true;
+  return /column .* does not exist|could not find the '.*' column/i.test(String(error.message || ""));
+}
+
+function isMissingRelationError(error) {
+  const code = String(error?.code || "");
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    /could not find the table|relation .* does not exist/i.test(String(error?.message || ""))
+  );
+}
+
+function throwMigrationHintIfNeeded(error) {
+  if (isMissingRelationError(error) || isMissingColumnError(error)) {
+    throw new Error(MIGRATION_HINT);
+  }
+  throw error;
 }
 
 function supabaseUrl() {
@@ -107,53 +126,6 @@ export function rowToScenario(row) {
     },
     allowLocal
   );
-}
-
-function derivePrimaryFields(payload, translations) {
-  const preferred = typeof payload?.primary_language === "string"
-    ? payload.primary_language
-    : null;
-  const order = [preferred, "en", "de", "sq"].filter(
-    (l, i, arr) => l && SUPPORTED_SCENARIO_LOCALES.includes(l) && arr.indexOf(l) === i
-  );
-  for (const lng of order) {
-    const slot = translations[lng];
-    if (slot && (slot.title || "").trim() && (slot.scenario || "").trim() && (slot.solution || "").trim()) {
-      return {
-        title: slot.title,
-        scenario: slot.scenario,
-        solution: slot.solution,
-        tags: slot.tags,
-      };
-    }
-  }
-  return {
-    title: (payload?.title || "").toString(),
-    scenario: (payload?.scenario || "").toString(),
-    solution: (payload?.solution || "").toString(),
-    tags: Array.isArray(payload?.tags) ? payload.tags : [],
-  };
-}
-
-function scenarioImageFields(payload) {
-  const fromArray = Array.isArray(payload?.image_urls) ? payload.image_urls : null;
-  const legacy =
-    typeof payload?.image_url === "string" && payload.image_url.trim()
-      ? payload.image_url.trim()
-      : "";
-  const raw =
-    fromArray && fromArray.length > 0
-      ? fromArray
-      : legacy
-        ? [legacy]
-        : fromArray || [];
-  const image_urls = sanitizeImageUrls(raw, { allowLocalUploads: false });
-  const image_captions = sanitizeImageCaptions(payload?.image_captions, image_urls);
-  return {
-    image_urls,
-    image_url: image_urls[0] || null,
-    image_captions,
-  };
 }
 
 function rowToCategory(row) {
@@ -350,8 +322,14 @@ export async function deleteWorkPackage(slug) {
     .select("category_slug", { count: "exact", head: true })
     .eq("wp_slug", slug);
   if (countError) throw countError;
-  if ((count || 0) > 0) {
-    return { deleted: false, reason: "in_use", count };
+  const { count: scenarioCount, error: scenarioCountError } = await sb
+    .from(V2_WP_TABLE)
+    .select("scenario_id", { count: "exact", head: true })
+    .eq("wp_slug", slug);
+  if (scenarioCountError && !isMissingRelationError(scenarioCountError)) throw scenarioCountError;
+  const inUse = (count || 0) + (scenarioCountError ? 0 : scenarioCount || 0);
+  if (inUse > 0) {
+    return { deleted: false, reason: "in_use", count: inUse };
   }
 
   const { error } = await sb.from("work_packages").delete().eq("slug", slug);
@@ -392,19 +370,6 @@ async function findCategoryBySlug(slug) {
     .maybeSingle();
   if (error) throw error;
   return rowToCategory(data);
-}
-
-async function resolveCategorySlug(labelOrSlug) {
-  const value = String(labelOrSlug || "").trim();
-  if (!value) throw new Error("Category required");
-
-  const byLabel = await findCategoryByLabel(value);
-  if (byLabel) return byLabel.slug;
-
-  const bySlug = await findCategoryBySlug(value);
-  if (bySlug) return bySlug.slug;
-
-  throw new Error(`Unknown category: ${value}`);
 }
 
 function mapCategoryDbError(error) {
@@ -516,6 +481,92 @@ export async function deleteCategory(slug) {
   return { deleted: true };
 }
 
+const V2_TABLE = "scenarios_v2";
+const V2_WP_TABLE = "scenarios_v2_work_packages";
+
+function rowToV2Scenario(row, wps) {
+  return normalizeScenario(
+    {
+      id: Number(row.id),
+      category: "",
+      title: row.title,
+      scenario: "",
+      solution: "",
+      tags: Array.isArray(row.tags) ? row.tags : [],
+      translations: row.translations && typeof row.translations === "object" ? row.translations : {},
+      wps,
+      situations: Array.isArray(row.situations) ? row.situations : [],
+      replaces_legacy_id: row.replaces_legacy_id,
+      confluence_page_id: typeof row.confluence_page_id === "string" ? row.confluence_page_id : "",
+      confluence_page_url: typeof row.confluence_page_url === "string" ? row.confluence_page_url : "",
+      confluence_page_title: typeof row.confluence_page_title === "string" ? row.confluence_page_title : "",
+      is_published: typeof row.is_published === "boolean" ? row.is_published : undefined,
+    },
+    { allowLocalUploads: false }
+  );
+}
+
+async function loadV2WpLabels() {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from(V2_WP_TABLE)
+    .select("scenario_id, work_packages(label, sort_order)");
+  if (error) throw error;
+  const by = Object.create(null);
+  for (const row of data || []) {
+    const label = row.work_packages?.label;
+    if (!label) continue;
+    if (!by[row.scenario_id]) by[row.scenario_id] = [];
+    by[row.scenario_id].push({ label, sort: Number(row.work_packages?.sort_order) || 0 });
+  }
+  for (const id of Object.keys(by)) {
+    by[id].sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label));
+    by[id] = by[id].map((x) => x.label);
+  }
+  return by;
+}
+
+async function listV2Scenarios({ publishedOnly }) {
+  const sb = getSupabase();
+  let query = sb
+    .from(V2_TABLE)
+    .select("*")
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
+  if (publishedOnly) query = query.eq("is_published", true);
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingRelationError(error)) return [];
+    throw error;
+  }
+  if (!data?.length) return [];
+  const wpsById = await loadV2WpLabels();
+  return data.map((row) => rowToV2Scenario(row, wpsById[row.id] || [])).filter(Boolean);
+}
+
+async function getV2ScenarioById(id) {
+  const sb = getSupabase();
+  const { data, error } = await sb.from(V2_TABLE).select("*").eq("id", id).maybeSingle();
+  if (error) {
+    if (isMissingRelationError(error)) return null;
+    throw error;
+  }
+  if (!data) return null;
+  const wpsById = await loadV2WpLabels();
+  return rowToV2Scenario(data, wpsById[data.id] || []);
+}
+
+async function getLegacyScenarioById(id) {
+  const sb = getSupabase();
+  const { data, error } = await sb.from("scenarios_admin").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return rowToScenario(data);
+}
+
+async function getScenarioById(id) {
+  return isScenarioV2Id(id) ? getV2ScenarioById(id) : getLegacyScenarioById(id);
+}
+
 export async function listPublishedScenarios() {
   const sb = getSupabase();
   const { data, error } = await sb
@@ -524,10 +575,13 @@ export async function listPublishedScenarios() {
     .order("sort_order", { ascending: true })
     .order("id", { ascending: true });
   if (error) throw error;
-  return (data || []).map(rowToScenario).filter(Boolean);
+  const legacy = (data || []).map(rowToScenario).filter(Boolean);
+  return withoutReplacedLegacy([...legacy, ...(await listV2Scenarios({ publishedOnly: true }))], {
+    publishedOnly: true,
+  });
 }
 
-export async function listAllScenarios() {
+export async function listAllScenarios({ includeReplaced = false } = {}) {
   const sb = getSupabase();
   const { data, error } = await sb
     .from("scenarios_admin")
@@ -535,77 +589,114 @@ export async function listAllScenarios() {
     .order("sort_order", { ascending: true })
     .order("id", { ascending: true });
   if (error) throw error;
-  return (data || []).map(rowToScenario).filter(Boolean);
+  const legacy = (data || []).map(rowToScenario).filter(Boolean);
+  const all = [...legacy, ...(await listV2Scenarios({ publishedOnly: false }))];
+  return includeReplaced ? all : withoutReplacedLegacy(all, { publishedOnly: false });
+}
+
+function v2Row(payload) {
+  const translations = {};
+  for (const [lng, slot] of Object.entries(payload.translations || {})) {
+    translations[lng] = { title: slot.title, tags: slot.tags };
+  }
+  const row = {
+    title: payload.title.trim(),
+    tags: payload.tags,
+    translations,
+    situations: payload.situations,
+  };
+  if (payload.confluence_page_id) {
+    row.confluence_page_id = payload.confluence_page_id;
+    row.confluence_page_url = payload.confluence_page_url || null;
+    row.confluence_page_title = payload.confluence_page_title || null;
+  }
+  return row;
+}
+
+async function replaceV2Wps(scenarioId, labelsOrSlugs) {
+  const slugs = await resolveWpSlugs(labelsOrSlugs);
+  const sb = getSupabase();
+  const { error: delErr } = await sb.from(V2_WP_TABLE).delete().eq("scenario_id", scenarioId);
+  if (delErr) throwMigrationHintIfNeeded(delErr);
+  if (!slugs.length) return;
+  const { error } = await sb
+    .from(V2_WP_TABLE)
+    .insert(slugs.map((wp_slug) => ({ scenario_id: scenarioId, wp_slug })));
+  if (error) throwMigrationHintIfNeeded(error);
 }
 
 export async function insertScenario(payload) {
   const sb = getSupabase();
-  const category_slug = await resolveCategorySlug(payload.category);
-  const images = scenarioImageFields(payload);
-  const translations = sanitizeTranslations(payload.translations);
-  const primary = derivePrimaryFields(payload, translations);
-  const row = {
-    category_slug,
-    title: primary.title.trim(),
-    situation: primary.scenario.trim(),
-    solution: primary.solution.trim(),
-    tags: primary.tags,
-    translations,
-    image_url: images.image_url,
-    image_urls: images.image_urls,
-    confluence_page_id: payload.confluence_page_id || null,
-    confluence_page_url: payload.confluence_page_url || null,
-    confluence_page_title: payload.confluence_page_title || null,
-    sort_order: payload.sort_order ?? 0,
-    is_published: payload.is_published !== false,
-    solution_as_checklist: payload.solution_as_checklist === true,
-    acceptance_as_checklist: payload.acceptance_as_checklist === true,
-    verdict: payload.verdict || null,
-  };
-  let { data, error } = await sb
-    .from("scenarios")
-    .insert({ ...row, image_captions: images.image_captions })
-    .select("id")
-    .single();
-  if (error && isMissingColumnError(error)) {
-    ({ data, error } = await sb.from("scenarios").insert(row).select("id").single());
+  await resolveWpSlugs(payload.wps);
+  const row = { ...v2Row(payload), is_published: payload.is_published !== false };
+  if (payload.replaces_legacy_id) {
+    if (!(await getLegacyScenarioById(payload.replaces_legacy_id))) {
+      throw new Error("The scenario to replace was not found");
+    }
+    row.replaces_legacy_id = payload.replaces_legacy_id;
   }
-  if (error) throw error;
-  return getScenarioById(data.id);
+  const { data, error } = await sb.from(V2_TABLE).insert(row).select("id").single();
+  if (error?.code === "23505") throw new Error("This scenario has already been converted");
+  if (error) throwMigrationHintIfNeeded(error);
+  try {
+    await replaceV2Wps(data.id, payload.wps);
+  } catch (e) {
+    await sb.from(V2_TABLE).delete().eq("id", data.id);
+    throw e;
+  }
+  return getV2ScenarioById(data.id);
 }
 
-export async function updateScenario(id, payload) {
+async function updateV2Scenario(id, payload) {
   const sb = getSupabase();
-  const previous = await getScenarioById(id);
+  const previous = await getV2ScenarioById(id);
   if (!previous) return null;
 
-  const category_slug = await resolveCategorySlug(payload.category);
-  const images = scenarioImageFields(payload);
-  const translations = sanitizeTranslations(payload.translations);
-  const primary = derivePrimaryFields(payload, translations);
+  await resolveWpSlugs(payload.wps);
+  const updates = { ...v2Row(payload), updated_at: new Date().toISOString() };
+  if (typeof payload.is_published === "boolean") {
+    updates.is_published = payload.is_published;
+  }
+  const { error } = await sb.from(V2_TABLE).update(updates).eq("id", id);
+  if (error) throwMigrationHintIfNeeded(error);
+  await replaceV2Wps(id, payload.wps);
+
+  const saved = await getV2ScenarioById(id);
+  const { removeStoredImages, urlsRemovedFromScenario, imageUrlsFromScenario } = await import(
+    "./upload.js"
+  );
+  await removeStoredImages(urlsRemovedFromScenario(previous, imageUrlsFromScenario(saved)));
+  return saved;
+}
+
+async function updateLegacyScenario(id, payload) {
+  const sb = getSupabase();
+  const previous = await getLegacyScenarioById(id);
+  if (!previous) return null;
+
+  const fields = legacyFieldsFromSituationPayload(payload);
+  const image_urls = sanitizeImageUrls(fields.image_urls, { allowLocalUploads: false });
   const updates = {
-    category_slug,
-    title: primary.title.trim(),
-    situation: primary.scenario.trim(),
-    solution: primary.solution.trim(),
-    tags: primary.tags,
-    translations,
-    image_url: images.image_url,
-    image_urls: images.image_urls,
+    title: fields.title.trim(),
+    situation: fields.scenario.trim(),
+    solution: fields.solution.trim(),
+    tags: fields.tags,
+    translations: fields.translations,
+    image_url: image_urls[0] || null,
+    image_urls,
     confluence_page_id: payload.confluence_page_id || null,
     confluence_page_url: payload.confluence_page_url || null,
     confluence_page_title: payload.confluence_page_title || null,
-    sort_order: payload.sort_order ?? 0,
-    solution_as_checklist: payload.solution_as_checklist === true,
-    acceptance_as_checklist: payload.acceptance_as_checklist === true,
-    verdict: payload.verdict || null,
+    solution_as_checklist: fields.solution_as_checklist,
+    acceptance_as_checklist: fields.acceptance_as_checklist,
+    verdict: fields.verdict,
   };
   if (typeof payload.is_published === "boolean") {
     updates.is_published = payload.is_published;
   }
   let { error } = await sb
     .from("scenarios")
-    .update({ ...updates, image_captions: images.image_captions })
+    .update({ ...updates, image_captions: fields.image_captions })
     .eq("id", id);
   if (error && isMissingColumnError(error)) {
     ({ error } = await sb.from("scenarios").update(updates).eq("id", id));
@@ -613,27 +704,25 @@ export async function updateScenario(id, payload) {
   if (error) throw error;
 
   const { removeStoredImages, urlsRemovedFromScenario } = await import("./upload.js");
-  await removeStoredImages(urlsRemovedFromScenario(previous, images.image_urls));
+  await removeStoredImages(urlsRemovedFromScenario(previous, image_urls));
+  return getLegacyScenarioById(id);
+}
 
-  return getScenarioById(id);
+export async function updateScenario(id, payload) {
+  return isScenarioV2Id(id) ? updateV2Scenario(id, payload) : updateLegacyScenario(id, payload);
 }
 
 export async function deleteScenarioById(id) {
   const sb = getSupabase();
   const previous = await getScenarioById(id);
-  const { error } = await sb.from("scenarios").delete().eq("id", id);
+  const { error } = isScenarioV2Id(id)
+    ? await sb.from(V2_TABLE).delete().eq("id", id)
+    : await sb.from("scenarios").delete().eq("id", id);
   if (error) throw error;
   if (previous) {
     const { removeStoredImages, imageUrlsFromScenario } = await import("./upload.js");
     await removeStoredImages(imageUrlsFromScenario(previous));
   }
-}
-
-async function getScenarioById(id) {
-  const sb = getSupabase();
-  const { data, error } = await sb.from("scenarios_admin").select("*").eq("id", id).maybeSingle();
-  if (error) throw error;
-  return rowToScenario(data);
 }
 
 export async function isConfluencePagePublic(pageId) {
@@ -646,5 +735,15 @@ export async function isConfluencePagePublic(pageId) {
     .eq("confluence_page_id", clean)
     .eq("is_published", true);
   if (error) throw error;
-  return (count || 0) > 0;
+  if ((count || 0) > 0) return true;
+  const { count: v2Count, error: v2Error } = await sb
+    .from(V2_TABLE)
+    .select("id", { count: "exact", head: true })
+    .eq("confluence_page_id", clean)
+    .eq("is_published", true);
+  if (v2Error) {
+    if (isMissingRelationError(v2Error) || isMissingColumnError(v2Error)) return false;
+    throw v2Error;
+  }
+  return (v2Count || 0) > 0;
 }
