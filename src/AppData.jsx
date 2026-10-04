@@ -13,7 +13,6 @@ export function useAppData() {
 
 export function AppDataProvider({ children }) {
   const [scenarios, setScenarios] = useState(null);
-  const [categories, setCategories] = useState(null);
   const [workPackages, setWorkPackages] = useState(null);
   const [scenariosLoadError, setScenariosLoadError] = useState(null);
   const [serverConfig, setServerConfig] = useState({
@@ -48,19 +47,6 @@ export function AppDataProvider({ children }) {
     []
   );
 
-  const loadCategoriesFromServer = useCallback(async () => {
-    try {
-      const res = await apiFetch("/api/categories");
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      const list = Array.isArray(data?.categories) ? data.categories : null;
-      if (!list) throw new Error("bad response");
-      setCategories(list);
-    } catch {
-      setCategories([]);
-    }
-  }, []);
-
   const loadWorkPackagesFromServer = useCallback(async () => {
     try {
       const res = await apiFetch("/api/work-packages");
@@ -91,9 +77,8 @@ export function AppDataProvider({ children }) {
 
   useEffect(() => {
     loadScenariosFromServer();
-    loadCategoriesFromServer();
     loadWorkPackagesFromServer();
-  }, [loadScenariosFromServer, loadCategoriesFromServer, loadWorkPackagesFromServer]);
+  }, [loadScenariosFromServer, loadWorkPackagesFromServer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,8 +125,6 @@ export function AppDataProvider({ children }) {
     () => ({
       scenarios,
       setScenarios,
-      categories,
-      setCategories,
       workPackages,
       setWorkPackages,
       scenariosLoadError,
@@ -152,12 +135,10 @@ export function AppDataProvider({ children }) {
       setAdminEmail,
       notify,
       loadScenariosFromServer,
-      loadCategoriesFromServer,
       loadWorkPackagesFromServer,
     }),
     [
       scenarios,
-      categories,
       workPackages,
       scenariosLoadError,
       serverConfig,
@@ -165,7 +146,6 @@ export function AppDataProvider({ children }) {
       adminEmail,
       notify,
       loadScenariosFromServer,
-      loadCategoriesFromServer,
       loadWorkPackagesFromServer,
     ]
   );

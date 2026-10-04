@@ -1,5 +1,3 @@
-export const ALL_FILTER = "All";
-
 export const ACCENT_PALETTE = [
   "#e74c3c",
   "#e67e22",
@@ -15,7 +13,7 @@ export const ACCENT_PALETTE = [
 
 const DEFAULT_ACCENT = "#7f8c8d";
 
-export function accentForCategory(label) {
+export function accentForLabel(label) {
   const s = String(label || "");
   if (!s) return DEFAULT_ACCENT;
   let hash = 0;
@@ -25,24 +23,7 @@ export function accentForCategory(label) {
   return ACCENT_PALETTE[hash % ACCENT_PALETTE.length];
 }
 
-export function buildCategoryCounts(scenarios) {
-  const by = Object.create(null);
-  for (let i = 0; i < scenarios.length; i++) {
-    const c = scenarios[i].category;
-    by[c] = (by[c] || 0) + 1;
-  }
-  return { total: scenarios.length, by };
-}
-
 export function localePath(lng, ...parts) {
   const rest = parts.filter(Boolean).join("/").replace(/^\/+/, "");
   return rest ? `/${lng}/${rest}` : `/${lng}`;
-}
-
-export function formatCategoryLabel(label, wp) {
-  const l = String(label || "").trim();
-  const w = Array.isArray(wp)
-    ? wp.map((x) => String(x || "").trim()).filter(Boolean).join(", ")
-    : String(wp || "").trim();
-  return w ? `${l} · ${w}` : l;
 }

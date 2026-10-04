@@ -207,6 +207,197 @@ export function pickTranslation(scenario, preferred) {
   return null;
 }
 
+export const MAX_SITUATIONS = 30;
+
+function sanitizeSituationTranslation(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const text = (v) => (typeof v === "string" ? v.slice(0, BODY_MAX_LEN) : "");
+  const scenario = text(raw.scenario);
+  const solution = text(raw.solution);
+  const acceptance = text(raw.acceptance);
+  if (!scenario.trim() && !solution.trim() && !acceptance.trim()) return null;
+  return { scenario, solution, acceptance };
+}
+
+export function sanitizeSituations(raw, options = {}) {
+  if (!Array.isArray(raw)) return [];
+  const usedIds = new Set();
+  const out = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const verdict = parseVerdict(item.verdict);
+    if (!verdict) continue;
+    const translations = {};
+    for (const lng of SUPPORTED_SCENARIO_LOCALES) {
+      const slot = sanitizeSituationTranslation(item.translations?.[lng]);
+      if (slot) translations[lng] = slot;
+    }
+    if (!Object.keys(translations).length) continue;
+    let id =
+      typeof item.id === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(item.id)
+        ? item.id
+        : `s${out.length + 1}`;
+    while (usedIds.has(id)) id = `${id}x`.slice(0, 40);
+    usedIds.add(id);
+    const image_urls = sanitizeImageUrls(item.image_urls, options);
+    out.push({
+      id,
+      verdict,
+      translations,
+      image_urls,
+      image_captions: sanitizeImageCaptions(item.image_captions, image_urls),
+      solution_as_checklist: coerceSolutionAsChecklist(item.solution_as_checklist),
+      acceptance_as_checklist: coerceSolutionAsChecklist(item.acceptance_as_checklist),
+    });
+    if (out.length >= MAX_SITUATIONS) break;
+  }
+  return out;
+}
+
+export const SCENARIO_V2_ID_START = 100000;
+
+export function isScenarioV2Id(id) {
+  return Number(id) >= SCENARIO_V2_ID_START;
+}
+
+export function legacyFieldsFromSituationPayload(payload) {
+  const situation = payload.situations[0];
+  const translations = {};
+  for (const lng of SUPPORTED_SCENARIO_LOCALES) {
+    const head = payload.translations[lng];
+    const body = situation.translations[lng];
+    if (!head && !body) continue;
+    translations[lng] = {
+      title: head?.title || "",
+      tags: head?.tags || [],
+      scenario: body?.scenario || "",
+      solution: body?.solution || "",
+      acceptance: body?.acceptance || "",
+    };
+  }
+  return {
+    title: payload.title,
+    scenario: payload.scenario,
+    solution: payload.solution,
+    tags: payload.tags,
+    translations,
+    image_urls: situation.image_urls,
+    image_captions: situation.image_captions,
+    solution_as_checklist: situation.solution_as_checklist,
+    acceptance_as_checklist: situation.acceptance_as_checklist,
+    verdict: situation.verdict,
+  };
+}
+
+export function scenarioWpList(scenario) {
+  if (Array.isArray(scenario?.wps) && scenario.wps.length) return scenario.wps;
+  return Array.isArray(scenario?.category_wps) ? scenario.category_wps : [];
+}
+
+export function scenarioImageUrlList(scenario) {
+  const urls = [];
+  const add = (list) => {
+    for (const u of Array.isArray(list) ? list : []) {
+      if (typeof u === "string" && u.trim() && !urls.includes(u)) urls.push(u);
+    }
+  };
+  add(scenario?.image_urls);
+  if (!urls.length && typeof scenario?.image_url === "string") add([scenario.image_url.trim()]);
+  for (const s of scenario?.situations || []) add(s.image_urls);
+  return urls;
+}
+
+export function pickScenarioView(scenario, preferred) {
+  if (!scenario) return null;
+  if (Array.isArray(scenario.situations) && scenario.situations.length) {
+    const slot = scenario.translations?.[preferred];
+    const title = (slot?.title || "").trim();
+    if (!title) return null;
+    const situations = [];
+    for (const s of scenario.situations) {
+      const t = s.translations?.[preferred];
+      if (!t || !(t.scenario || "").trim() || !(t.solution || "").trim()) continue;
+      situations.push({
+        id: s.id,
+        verdict: s.verdict,
+        scenario: t.scenario,
+        solution: t.solution,
+        acceptance: t.acceptance || "",
+        image_urls: s.image_urls || [],
+        image_captions: s.image_captions || {},
+        solution_as_checklist: s.solution_as_checklist === true,
+        acceptance_as_checklist: s.acceptance_as_checklist === true,
+      });
+    }
+    if (!situations.length) return null;
+    return { title: slot.title, tags: Array.isArray(slot.tags) ? slot.tags : [], situations };
+  }
+  const legacy = pickTranslation(scenario, preferred);
+  if (!legacy || !parseVerdict(scenario.verdict)) return null;
+  return {
+    title: legacy.title,
+    tags: legacy.tags,
+    situations: [
+      {
+        id: "legacy",
+        verdict: scenario.verdict,
+        scenario: legacy.scenario,
+        solution: legacy.solution,
+        acceptance: legacy.acceptance,
+        image_urls: scenarioImageUrlList(scenario),
+        image_captions: scenario.image_captions || {},
+        solution_as_checklist: scenario.solution_as_checklist === true,
+        acceptance_as_checklist: scenario.acceptance_as_checklist === true,
+      },
+    ],
+  };
+}
+
+export function scenarioToEditable(scenario) {
+  const translations = {};
+  const situationTranslations = {};
+  const source = scenario?.translations || {};
+  const hasSlots = SUPPORTED_SCENARIO_LOCALES.some((lng) => source[lng]);
+  const slots = hasSlots
+    ? source
+    : {
+        en: {
+          title: scenario?.title || "",
+          scenario: scenario?.scenario || "",
+          solution: scenario?.solution || "",
+          acceptance: "",
+          tags: scenario?.tags || [],
+        },
+      };
+  for (const lng of SUPPORTED_SCENARIO_LOCALES) {
+    const slot = slots[lng];
+    if (!slot) continue;
+    translations[lng] = { title: slot.title || "", tags: Array.isArray(slot.tags) ? slot.tags : [] };
+    situationTranslations[lng] = {
+      scenario: slot.scenario || "",
+      solution: slot.solution || "",
+      acceptance: slot.acceptance || "",
+    };
+  }
+  const situations =
+    Array.isArray(scenario?.situations) && scenario.situations.length
+      ? scenario.situations
+      : parseVerdict(scenario?.verdict)
+        ? [
+            {
+              id: "s1",
+              verdict: scenario.verdict,
+              translations: situationTranslations,
+              image_urls: scenarioImageUrlList(scenario),
+              image_captions: scenario.image_captions || {},
+              solution_as_checklist: scenario.solution_as_checklist === true,
+              acceptance_as_checklist: scenario.acceptance_as_checklist === true,
+            },
+          ]
+        : [];
+  return { translations, wps: scenarioWpList(scenario), situations };
+}
+
 export function normalizeScenario(s, options = {}) {
   if (!isScenarioRecord(s)) return null;
   const image_urls = sanitizeImageUrls(collectRawImageInputs(s), options);
@@ -230,6 +421,8 @@ export function normalizeScenario(s, options = {}) {
     acceptance_as_checklist: coerceSolutionAsChecklist(s.acceptance_as_checklist),
     verdict: parseVerdict(s.verdict) || null,
     category_wps: sanitizeWpList(s.category_wps ?? s.category_wp),
+    wps: sanitizeWpList(s.wps),
+    situations: sanitizeSituations(s.situations, options),
   };
   out.category_wp = out.category_wps.join(", ");
   if (typeof s.is_published === "boolean") {
@@ -238,12 +431,6 @@ export function normalizeScenario(s, options = {}) {
     out.is_published = Boolean(s.is_published);
   }
   return out;
-}
-
-export function normalizeScenarioList(list, options = {}) {
-  if (!Array.isArray(list)) return null;
-  const normalized = list.map((s) => normalizeScenario(s, options)).filter(Boolean);
-  return normalized.length ? normalized : null;
 }
 
 export { sanitizeImageUrl, sanitizeConfluencePageId, sanitizeConfluenceUrl };

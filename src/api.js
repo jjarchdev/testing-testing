@@ -103,41 +103,6 @@ async function jsonOrThrow(res) {
   return data;
 }
 
-export async function fetchConfluenceStatus() {
-  const res = await apiFetch("/api/confluence/status");
-  return jsonOrThrow(res);
-}
-
-export async function startConfluenceCloudConnect() {
-  const res = await apiFetchWithAuth("/api/confluence/connect/cloud");
-  const data = await jsonOrThrow(res);
-  return data.url;
-}
-
-export async function connectConfluenceDc({ baseUrl, personalAccessToken, username }) {
-  const res = await apiFetchWithAuth("/api/confluence/connect/dc", {
-    method: "POST",
-    body: JSON.stringify({
-      base_url: baseUrl,
-      personal_access_token: personalAccessToken,
-      username,
-    }),
-  });
-  return jsonOrThrow(res);
-}
-
-export async function disconnectConfluence() {
-  const res = await apiFetchWithAuth("/api/confluence/disconnect", { method: "DELETE" });
-  return jsonOrThrow(res);
-}
-
-export async function searchConfluencePages(query) {
-  const q = String(query || "").trim();
-  if (!q) return { results: [] };
-  const res = await apiFetchWithAuth(`/api/confluence/search?q=${encodeURIComponent(q)}`);
-  return jsonOrThrow(res);
-}
-
 export async function fetchConfluencePage(pageId) {
   const clean = String(pageId || "").trim();
   if (!clean) throw new Error("No page id");

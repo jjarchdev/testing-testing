@@ -21,7 +21,6 @@ export default function AdminLogin() {
     serverConfig,
     setAdminSession,
     loadScenariosFromServer,
-    loadCategoriesFromServer,
   } = useAppData();
 
   const envAvailable = !!serverConfig.envLoginAvailable;
@@ -60,7 +59,7 @@ export default function AdminLogin() {
       try {
         await exchangeForAppSession(token);
         setAdminSession(true);
-        await Promise.all([loadScenariosFromServer(), loadCategoriesFromServer()]);
+        await loadScenariosFromServer();
         navigate(localePath(lng, "admin"), { replace: true });
       } catch (err) {
         setError(err?.message || t("login.exchangeFailed"));
@@ -88,7 +87,7 @@ export default function AdminLogin() {
   const finishLogin = async () => {
     setAdminSession(true);
     setPassword("");
-    await Promise.all([loadScenariosFromServer(), loadCategoriesFromServer()]);
+    await loadScenariosFromServer();
     navigate(localePath(lng, "admin"), { replace: true });
   };
 

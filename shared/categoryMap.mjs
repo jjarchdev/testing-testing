@@ -9,10 +9,6 @@ export function slugifyLabel(label) {
   return raw.slice(0, 64);
 }
 
-export function labelToSlug(label) {
-  return slugifyLabel(label);
-}
-
 const WP_MAX_LEN = 32;
 
 export function sanitizeWp(value) {
@@ -50,11 +46,6 @@ export function normalizeWorkPackage(row) {
   };
 }
 
-export function normalizeWorkPackageList(list) {
-  if (!Array.isArray(list)) return null;
-  return list.map(normalizeWorkPackage).filter(Boolean);
-}
-
 export function normalizeCategory(row) {
   if (!row || typeof row !== "object") return null;
   const slug = typeof row.slug === "string" ? row.slug.trim() : "";
@@ -69,9 +60,4 @@ export function normalizeCategory(row) {
     sort_order: Number.isFinite(sort_order) ? sort_order : 0,
     wps,
   };
-}
-
-export function normalizeCategoryList(list) {
-  if (!Array.isArray(list)) return null;
-  return list.map(normalizeCategory).filter(Boolean);
 }
