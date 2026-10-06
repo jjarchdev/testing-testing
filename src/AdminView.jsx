@@ -6,6 +6,9 @@ import { useAppData } from "./AppData.jsx";
 import LanguageSwitcher from "./LanguageSwitcher.jsx";
 import AdminsPanel from "./AdminsPanel.jsx";
 import ScenarioForm from "./ScenarioForm.jsx";
+import GuidesAdmin from "./GuidesAdmin.jsx";
+import SortableList from "./SortableList.jsx";
+import { ChevronDownIcon, ChevronUpIcon, GripIcon } from "./icons.jsx";
 import { localePath } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
 import { styles } from "./styles.js";
@@ -26,10 +29,24 @@ function situationSnippet(situation, preferredLng) {
   return "";
 }
 
-function WorkPackageManager({ workPackages, onSave, onDelete, onBack }) {
+const naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+const orderBtn = {
+  width: 34,
+  height: 34,
+  padding: 0,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 8,
+  fontSize: "0.95rem",
+  lineHeight: 1,
+  flexShrink: 0,
+};
+
+function WorkPackageManager({ workPackages, onSave, onDelete, onReorder, onBack }) {
   const { t } = useTranslation();
   const [label, setLabel] = useState("");
-  const [sortOrder, setSortOrder] = useState("");
   const [editingSlug, setEditingSlug] = useState(null);
   const [formError, setFormError] = useState("");
   const [deleteSlug, setDeleteSlug] = useState(null);
@@ -41,9 +58,14 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onBack }) {
     return workPackages.find((w) => w.slug === editingSlug)?.label || label;
   }, [workPackages, editingSlug, label]);
 
+  const naturalOrder = useMemo(
+    () => [...workPackages].sort((a, b) => naturalCollator.compare(a.label, b.label)),
+    [workPackages]
+  );
+  const alreadyNatural = naturalOrder.every((w, i) => w.slug === workPackages[i].slug);
+
   const resetForm = () => {
     setLabel("");
-    setSortOrder("");
     setEditingSlug(null);
     setFormError("");
   };
@@ -51,7 +73,6 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onBack }) {
   const startEdit = (wp) => {
     setEditingSlug(wp.slug);
     setLabel(wp.label);
-    setSortOrder(String(wp.sort_order));
     setFormError("");
     setDeleteSlug(null);
     requestAnimationFrame(() => {
@@ -75,13 +96,9 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onBack }) {
       setFormError(t("workPackages.labelRequired"));
       return;
     }
-    const payload = { label: label.trim() };
-    if (sortOrder.trim() !== "" && Number.isFinite(Number(sortOrder))) {
-      payload.sort_order = Number(sortOrder);
-    }
     setBusy(true);
     try {
-      const ok = await onSave(payload, editingSlug);
+      const ok = await onSave({ label: label.trim() }, editingSlug);
       if (ok) resetForm();
     } finally {
       setBusy(false);
@@ -124,15 +141,6 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onBack }) {
             setLabel(e.target.value);
           }}
         />
-        <label style={styles.label}>{t("workPackages.sortOrder")}</label>
-        <input
-          style={styles.input}
-          type="number"
-          placeholder="0"
-          value={sortOrder}
-          disabled={busy}
-          onChange={(e) => setSortOrder(e.target.value)}
-        />
         <div style={styles.formActions}>
           <button type="button" style={styles.primaryBtn} onClick={handleSave} disabled={busy}>
             {busy
@@ -154,60 +162,118 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onBack }) {
           {t("workPackages.empty")}
         </div>
       ) : (
-        <div style={{ ...styles.adminTable, marginTop: "2rem" }}>
-          <div style={styles.tableHead}>
-            <span style={{ flex: 2 }}>{t("workPackages.colLabel")}</span>
-            <span style={{ flex: 1, textAlign: "right" }}>{t("workPackages.colActions")}</span>
+        <div style={{ marginTop: "2rem" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "0.75rem",
+              flexWrap: "wrap",
+              marginBottom: "0.35rem",
+            }}
+          >
+            <h3 style={{ ...styles.formTitle, fontSize: "1.1rem", margin: 0 }}>{t("workPackages.orderTitle")}</h3>
+            <button
+              type="button"
+              style={{ ...styles.ghostBtn, padding: "0.4rem 0.85rem", fontSize: "0.85rem" }}
+              disabled={busy || alreadyNatural}
+              title={t("workPackages.sortNaturalHint")}
+              onClick={() => onReorder(naturalOrder)}
+            >
+              {t("workPackages.sortNatural")}
+            </button>
           </div>
-          {workPackages.map((wp) => (
-            <div key={wp.slug} style={styles.tableRow}>
-              {deleteSlug === wp.slug ? (
-                <div style={styles.deleteConfirm}>
-                  <span>{t("workPackages.deleteConfirm", { label: wp.label })}</span>
-                  <button
-                    type="button"
-                    style={styles.dangerBtn}
-                    disabled={busy}
-                    onClick={async () => {
-                      setBusy(true);
-                      try {
-                        const ok = await onDelete(wp.slug);
-                        if (ok) setDeleteSlug(null);
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                  >
-                    {busy ? t("workPackages.deleting") : t("workPackages.yesDelete")}
-                  </button>
-                  <button
-                    type="button"
-                    style={styles.cancelBtn}
-                    disabled={busy}
-                    onClick={() => setDeleteSlug(null)}
-                  >
-                    {t("workPackages.cancel")}
-                  </button>
+          <p style={{ color: "#8899aa", margin: "0 0 0.85rem", fontSize: "0.85rem" }}>{t("workPackages.orderHelp")}</p>
+          <div style={styles.adminTable}>
+            <SortableList
+              items={workPackages}
+              getKey={(w) => w.slug}
+              onReorder={onReorder}
+              disabled={busy}
+              renderItem={(wp, ctx) => (
+                <div style={{ ...styles.tableRow, background: ctx.isDragging ? "#16263a" : "#111e2c" }}>
+                  {deleteSlug === wp.slug ? (
+                    <div style={styles.deleteConfirm}>
+                      <span>{t("workPackages.deleteConfirm", { label: wp.label })}</span>
+                      <button
+                        type="button"
+                        style={styles.dangerBtn}
+                        disabled={busy}
+                        onClick={async () => {
+                          setBusy(true);
+                          try {
+                            const ok = await onDelete(wp.slug);
+                            if (ok) setDeleteSlug(null);
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                      >
+                        {busy ? t("workPackages.deleting") : t("workPackages.yesDelete")}
+                      </button>
+                      <button
+                        type="button"
+                        style={styles.cancelBtn}
+                        disabled={busy}
+                        onClick={() => setDeleteSlug(null)}
+                      >
+                        {t("workPackages.cancel")}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span style={{ width: 24, color: "#5c7186", fontWeight: 700, fontSize: "0.85rem", textAlign: "right", flexShrink: 0 }}>
+                        {ctx.index + 1}
+                      </span>
+                      <button
+                        type="button"
+                        {...ctx.handleProps}
+                        style={{ ...styles.ghostBtn, ...orderBtn, ...ctx.handleStyle, color: "#8899aa" }}
+                        aria-label={t("workPackages.dragHandle", { label: wp.label })}
+                        title={t("workPackages.dragHandle", { label: wp.label })}
+                      >
+                        <GripIcon />
+                      </button>
+                      <button
+                        type="button"
+                        {...ctx.upProps}
+                        style={{ ...styles.ghostBtn, ...orderBtn, opacity: ctx.upProps.disabled ? 0.35 : 1 }}
+                        aria-label={t("workPackages.moveUp", { label: wp.label })}
+                        title={t("workPackages.moveUp", { label: wp.label })}
+                      >
+                        <ChevronUpIcon />
+                      </button>
+                      <button
+                        type="button"
+                        {...ctx.downProps}
+                        style={{ ...styles.ghostBtn, ...orderBtn, opacity: ctx.downProps.disabled ? 0.35 : 1 }}
+                        aria-label={t("workPackages.moveDown", { label: wp.label })}
+                        title={t("workPackages.moveDown", { label: wp.label })}
+                      >
+                        <ChevronDownIcon />
+                      </button>
+                      <span style={{ flex: 1, minWidth: 0, fontWeight: 600, overflowWrap: "anywhere", paddingLeft: "0.35rem" }}>
+                        {wp.label}
+                      </span>
+                      <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
+                        <button type="button" style={styles.editBtn} onClick={() => startEdit(wp)}>
+                          {t("admin.edit")}
+                        </button>
+                        <button
+                          type="button"
+                          style={styles.dangerBtn}
+                          onClick={() => setDeleteSlug(wp.slug)}
+                        >
+                          {t("admin.delete")}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
-              ) : (
-                <>
-                  <span style={{ flex: 2, fontWeight: 600 }}>{wp.label}</span>
-                  <div style={{ flex: 1, display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-                    <button type="button" style={styles.editBtn} onClick={() => startEdit(wp)}>
-                      {t("admin.edit")}
-                    </button>
-                    <button
-                      type="button"
-                      style={styles.dangerBtn}
-                      onClick={() => setDeleteSlug(wp.slug)}
-                    >
-                      {t("admin.delete")}
-                    </button>
-                  </div>
-                </>
               )}
-            </div>
-          ))}
+            />
+          </div>
         </div>
       )}
     </div>
@@ -222,6 +288,7 @@ export default function AdminView() {
     scenarios,
     setScenarios,
     workPackages,
+    setWorkPackages,
     adminSession,
     setAdminSession,
     adminEmail,
@@ -230,12 +297,14 @@ export default function AdminView() {
     loadScenariosFromServer,
     loadWorkPackagesFromServer,
   } = useAppData();
+  const reorderSeq = useRef(0);
 
   const [editingScenario, setEditingScenario] = useState(null);
   const [formIntent, setFormIntent] = useState({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [showWorkPackageManager, setShowWorkPackageManager] = useState(false);
   const [showAdminsPanel, setShowAdminsPanel] = useState(false);
+  const [guidesIntent, setGuidesIntent] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const narrow = useIsNarrow();
   const [navOpen, setNavOpen] = useState(false);
@@ -246,13 +315,15 @@ export default function AdminView() {
   const scenarioList = scenarios ?? [];
   const workPackageList = workPackages || [];
   const listLoading = scenarios === null || workPackages === null;
+  const showGuides = guidesIntent !== null;
   const onScenarioList =
-    !showAddForm && !editingScenario && !showWorkPackageManager && !showAdminsPanel;
+    !showAddForm && !editingScenario && !showWorkPackageManager && !showAdminsPanel && !showGuides;
   const goToScenarioList = () => {
     setShowAddForm(false);
     setEditingScenario(null);
     setShowWorkPackageManager(false);
     setShowAdminsPanel(false);
+    setGuidesIntent(null);
     setNavOpen(false);
   };
   const openNewScenarioForm = () => {
@@ -261,6 +332,7 @@ export default function AdminView() {
     setShowAddForm(true);
     setShowWorkPackageManager(false);
     setShowAdminsPanel(false);
+    setGuidesIntent(null);
     setNavOpen(false);
   };
   const openScenarioEditor = (row, intent = {}) => {
@@ -269,6 +341,15 @@ export default function AdminView() {
     setShowAddForm(false);
     setShowWorkPackageManager(false);
     setShowAdminsPanel(false);
+    setGuidesIntent(null);
+  };
+  const openGuides = (intent) => {
+    setGuidesIntent(intent);
+    setShowAddForm(false);
+    setEditingScenario(null);
+    setShowWorkPackageManager(false);
+    setShowAdminsPanel(false);
+    setNavOpen(false);
   };
 
   const editableById = useMemo(() => {
@@ -296,7 +377,7 @@ export default function AdminView() {
   useEffect(() => {
     const main = document.getElementById("admin-main");
     if (main) main.scrollTop = 0;
-  }, [showAddForm, showWorkPackageManager, showAdminsPanel, editingScenario, listLoading]);
+  }, [showAddForm, showWorkPackageManager, showAdminsPanel, showGuides, editingScenario, listLoading]);
 
   useEffect(() => {
     if (scenarios == null) return;
@@ -400,6 +481,36 @@ export default function AdminView() {
     }
   };
 
+  const reorderWorkPackages = async (nextList) => {
+    if (!adminSession) {
+      notify(t("toast.notSignedIn"), "error");
+      return;
+    }
+    const seq = ++reorderSeq.current;
+    setWorkPackages(nextList);
+    try {
+      const res = await apiFetchWithAuth("/api/work-packages/order", {
+        method: "PUT",
+        body: JSON.stringify({ order: nextList.map((w) => w.slug) }),
+      });
+      if (handleAuthFailure(res)) return;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        notify(err?.error || t("toast.wpReorderFailed"), "error");
+        await loadWorkPackagesFromServer();
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (seq === reorderSeq.current && Array.isArray(data?.workPackages)) {
+        setWorkPackages(data.workPackages);
+      }
+      notify(t("toast.wpReordered"));
+    } catch {
+      notify(t("toast.unreachable"), "error");
+      await loadWorkPackagesFromServer();
+    }
+  };
+
   const deleteWorkPackage = async (slug) => {
     if (!adminSession) {
       notify(t("toast.notSignedIn"), "error");
@@ -468,6 +579,7 @@ export default function AdminView() {
     setEditingScenario(null);
     setShowWorkPackageManager(false);
     setShowAdminsPanel(false);
+    setGuidesIntent(null);
     loadScenariosFromServer();
     navigate(localePath(lng));
   };
@@ -541,7 +653,7 @@ export default function AdminView() {
             ...styles.ghostBtn,
             margin: "0 1rem 0.5rem",
             justifyContent: "center",
-            ...(onScenarioList ? { borderColor: "#4fa3ff", color: "#4fa3ff" } : {}),
+            ...(onScenarioList ? { border: "1px solid #4fa3ff", color: "#4fa3ff" } : {}),
           }}
           onClick={goToScenarioList}
         >
@@ -561,11 +673,38 @@ export default function AdminView() {
             setShowWorkPackageManager(true);
             setShowAddForm(false);
             setShowAdminsPanel(false);
+            setGuidesIntent(null);
             setEditingScenario(null);
             setNavOpen(false);
           }}
         >
           {t("admin.manageWps")}
+        </button>
+        <div style={styles.sidebarSectionLabel}>{t("admin.navKnowledge")}</div>
+        <button
+          type="button"
+          style={{
+            ...styles.ghostBtn,
+            margin: "0 1rem 0.5rem",
+            justifyContent: "center",
+            ...(guidesIntent === "list" ? { border: "1px solid #4fa3ff", color: "#4fa3ff" } : {}),
+          }}
+          onClick={() => openGuides("list")}
+        >
+          {t("admin.manageGuides")}
+        </button>
+        <button
+          type="button"
+          style={{
+            ...styles.ghostBtn,
+            margin: "0 1rem 0.5rem",
+            justifyContent: "center",
+            border: "1px dashed #4fa3ff",
+            color: "#4fa3ff",
+          }}
+          onClick={() => openGuides("new")}
+        >
+          {t("admin.addGuide")}
         </button>
         <div style={styles.sidebarSectionLabel}>{t("admin.navSettings")}</div>
         <button
@@ -575,6 +714,7 @@ export default function AdminView() {
             setShowAdminsPanel(true);
             setShowWorkPackageManager(false);
             setShowAddForm(false);
+            setGuidesIntent(null);
             setEditingScenario(null);
             setNavOpen(false);
           }}
@@ -641,7 +781,15 @@ export default function AdminView() {
             workPackages={workPackageList}
             onSave={saveWorkPackage}
             onDelete={deleteWorkPackage}
+            onReorder={reorderWorkPackages}
             onBack={() => setShowWorkPackageManager(false)}
+          />
+        ) : showGuides ? (
+          <GuidesAdmin
+            key={guidesIntent}
+            startWithNew={guidesIntent === "new"}
+            onAuthFailure={handleAuthFailure}
+            onBack={() => setGuidesIntent(null)}
           />
         ) : showAddForm || editingScenario ? (
           <ScenarioForm

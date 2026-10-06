@@ -14,6 +14,8 @@ export function useAppData() {
 export function AppDataProvider({ children }) {
   const [scenarios, setScenarios] = useState(null);
   const [workPackages, setWorkPackages] = useState(null);
+  const [guides, setGuides] = useState(null);
+  const [guidesLoadError, setGuidesLoadError] = useState(null);
   const [scenariosLoadError, setScenariosLoadError] = useState(null);
   const [serverConfig, setServerConfig] = useState({
     loaded: false,
@@ -75,10 +77,26 @@ export function AppDataProvider({ children }) {
     }
   }, []);
 
+  const loadGuidesFromServer = useCallback(async () => {
+    setGuidesLoadError(null);
+    try {
+      const res = await apiFetch("/api/guides");
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      const list = Array.isArray(data?.guides) ? data.guides : null;
+      if (!list) throw new Error("bad response");
+      setGuides(list);
+    } catch {
+      setGuides([]);
+      setGuidesLoadError(i18n.t("kb.loadError"));
+    }
+  }, []);
+
   useEffect(() => {
     loadScenariosFromServer();
     loadWorkPackagesFromServer();
-  }, [loadScenariosFromServer, loadWorkPackagesFromServer]);
+    loadGuidesFromServer();
+  }, [loadScenariosFromServer, loadWorkPackagesFromServer, loadGuidesFromServer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +145,9 @@ export function AppDataProvider({ children }) {
       setScenarios,
       workPackages,
       setWorkPackages,
+      guides,
+      setGuides,
+      guidesLoadError,
       scenariosLoadError,
       serverConfig,
       adminSession,
@@ -136,10 +157,13 @@ export function AppDataProvider({ children }) {
       notify,
       loadScenariosFromServer,
       loadWorkPackagesFromServer,
+      loadGuidesFromServer,
     }),
     [
       scenarios,
       workPackages,
+      guides,
+      guidesLoadError,
       scenariosLoadError,
       serverConfig,
       adminSession,
@@ -147,6 +171,7 @@ export function AppDataProvider({ children }) {
       notify,
       loadScenariosFromServer,
       loadWorkPackagesFromServer,
+      loadGuidesFromServer,
     ]
   );
 

@@ -23,6 +23,15 @@ export function accentForLabel(label) {
   return ACCENT_PALETTE[hash % ACCENT_PALETTE.length];
 }
 
+export function normalizeSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function localePath(lng, ...parts) {
   const rest = parts.filter(Boolean).join("/").replace(/^\/+/, "");
   return rest ? `/${lng}/${rest}` : `/${lng}`;

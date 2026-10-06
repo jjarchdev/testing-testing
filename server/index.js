@@ -29,6 +29,12 @@ const {
   insertWorkPackage,
   updateWorkPackage,
   deleteWorkPackage,
+  reorderWorkPackages,
+  listGuides,
+  insertGuide,
+  updateGuide,
+  deleteGuide,
+  reorderGuides,
   isConfluencePagePublic,
   checkImageUrlsReady,
 } = await import("./db.js");
@@ -43,8 +49,16 @@ const {
   insertWorkPackageOnDisk,
   updateWorkPackageOnDisk,
   deleteWorkPackageOnDisk,
+  reorderWorkPackagesOnDisk,
+  listGuidesOnDisk,
+  insertGuideOnDisk,
+  updateGuideOnDisk,
+  deleteGuideOnDisk,
+  reorderGuidesOnDisk,
   withPublishedDefault,
 } = await import("./fileStore.js");
+const { guideImageUrlList } = await import("../shared/guideSchema.mjs");
+const { parseGuideBody } = await import("./guidePayload.js");
 const {
   normalizeScenario,
   sanitizeSituations,
@@ -247,7 +261,14 @@ function parseScenarioBody(body, { legacy = false } = {}) {
         "TOO_MANY_IMAGES"
       );
     }
-    if (isSupabaseConfigured() && urls.some((u) => isLocalUploadPath(u))) {
+    const acceptanceUrls = Array.isArray(raw?.acceptance_image_urls) ? raw.acceptance_image_urls : [];
+    if (acceptanceUrls.length > MAX_SCENARIO_IMAGES) {
+      throw codedError(
+        `At most ${MAX_SCENARIO_IMAGES} acceptance images are allowed per situation`,
+        "TOO_MANY_IMAGES"
+      );
+    }
+    if (isSupabaseConfigured() && [...urls, ...acceptanceUrls].some((u) => isLocalUploadPath(u))) {
       throw codedError(
         "Local /uploads/ image paths do not work in production. Use Upload image so the file is stored in Supabase Storage.",
         "LEGACY_UPLOAD_PATH"
@@ -652,6 +673,23 @@ app.post("/api/work-packages", requireAuth, async (req, res) => {
   }
 });
 
+app.put("/api/work-packages/order", requireAuth, async (req, res) => {
+  if (requireSupabaseInProd(res)) return;
+  const order = req.body?.order;
+  if (!Array.isArray(order) || order.length > 500 || !order.every((s) => typeof s === "string")) {
+    return res.status(400).json({ error: "Invalid order" });
+  }
+  try {
+    const workPackages = isSupabaseConfigured()
+      ? await reorderWorkPackages(order)
+      : await reorderWorkPackagesOnDisk(order);
+    res.json({ workPackages: workPackages.map(normalizeWorkPackage).filter(Boolean) });
+  } catch (e) {
+    console.error("[work-packages:reorder]", e?.message || e);
+    res.status(400).json({ error: e.message || "Reorder failed" });
+  }
+});
+
 app.put("/api/work-packages/:slug", requireAuth, async (req, res) => {
   if (requireSupabaseInProd(res)) return;
   const slug = String(req.params.slug || "").trim();
@@ -696,7 +734,7 @@ app.delete("/api/work-packages/:slug", requireAuth, async (req, res) => {
     }
     if (result.reason === "in_use") {
       return res.status(409).json({
-        error: `WP is still used by ${result.count} scenario${result.count === 1 ? "" : "s"} or categories`,
+        error: `WP is still in use (${result.count} link${result.count === 1 ? "" : "s"} from scenarios, guides or categories). Remove it there first.`,
         count: result.count,
       });
     }
@@ -831,6 +869,101 @@ app.delete("/api/scenarios/:id", requireAuth, async (req, res) => {
     res.status(204).send();
   } catch (e) {
     console.error("[handler] delete:", e?.message || e);
+    res.status(400).json({ error: e.message || "Delete failed" });
+  }
+});
+
+async function listGuidesForRequest(req) {
+  const publishedOnly = !isAdminRequest(req);
+  return isSupabaseConfigured() ? listGuides({ publishedOnly }) : listGuidesOnDisk({ publishedOnly });
+}
+
+function parseGuideId(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    res.status(400).json({ error: "Invalid id" });
+    return null;
+  }
+  return id;
+}
+
+app.get("/api/guides", async (req, res) => {
+  if (requireSupabaseInProd(res)) return;
+  try {
+    res.json({ guides: await listGuidesForRequest(req) });
+  } catch (e) {
+    console.error("[guides:list]", e?.message || e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.post("/api/guides", requireAuth, async (req, res) => {
+  if (requireSupabaseInProd(res)) return;
+  try {
+    const payload = parseGuideBody(req.body);
+    const guide = isSupabaseConfigured() ? await insertGuide(payload) : await insertGuideOnDisk(payload);
+    res.status(201).json({ guide });
+  } catch (e) {
+    console.error("[guides:create]", e?.message || e);
+    res.status(400).json({ error: e.message || "Create failed" });
+  }
+});
+
+app.put("/api/guides/order", requireAuth, async (req, res) => {
+  if (requireSupabaseInProd(res)) return;
+  const order = req.body?.order;
+  if (!Array.isArray(order) || order.length > 1000 || !order.every((n) => Number.isInteger(n))) {
+    return res.status(400).json({ error: "Invalid order" });
+  }
+  try {
+    const guides = isSupabaseConfigured() ? await reorderGuides(order) : await reorderGuidesOnDisk(order);
+    res.json({ guides });
+  } catch (e) {
+    console.error("[guides:reorder]", e?.message || e);
+    res.status(400).json({ error: e.message || "Reorder failed" });
+  }
+});
+
+app.put("/api/guides/:id", requireAuth, async (req, res) => {
+  if (requireSupabaseInProd(res)) return;
+  const id = parseGuideId(req, res);
+  if (id == null) return;
+  try {
+    const payload = parseGuideBody(req.body);
+    let guide;
+    if (isSupabaseConfigured()) {
+      guide = await updateGuide(id, payload);
+    } else {
+      const result = await updateGuideOnDisk(id, payload);
+      guide = result?.guide || null;
+      if (result) {
+        const keep = new Set(guideImageUrlList(guide));
+        await removeStoredImages(guideImageUrlList(result.previous).filter((u) => !keep.has(u)));
+      }
+    }
+    if (!guide) return res.status(404).json({ error: "Not found" });
+    res.json({ guide });
+  } catch (e) {
+    console.error("[guides:update]", e?.message || e);
+    res.status(400).json({ error: e.message || "Update failed" });
+  }
+});
+
+app.delete("/api/guides/:id", requireAuth, async (req, res) => {
+  if (requireSupabaseInProd(res)) return;
+  const id = parseGuideId(req, res);
+  if (id == null) return;
+  try {
+    if (isSupabaseConfigured()) {
+      if (!(await deleteGuide(id))) return res.status(404).json({ error: "Not found" });
+    } else {
+      const removed = await deleteGuideOnDisk(id);
+      if (!removed) return res.status(404).json({ error: "Not found" });
+      await removeStoredImages(guideImageUrlList(removed));
+    }
+    res.status(204).send();
+  } catch (e) {
+    console.error("[guides:delete]", e?.message || e);
     res.status(400).json({ error: e.message || "Delete failed" });
   }
 });
@@ -997,10 +1130,11 @@ app.delete("/api/admin/admins/:email", requireAuth, async (req, res) => {
 app.get("/api/admin/export", requireAuth, async (_req, res) => {
   if (requireSupabaseInProd(res)) return;
   try {
-    const [categories, workPackages, scenarios] = await Promise.all([
+    const [categories, workPackages, scenarios, guides] = await Promise.all([
       isSupabaseConfigured() ? listCategories() : readCategoriesFromDisk(),
       isSupabaseConfigured() ? listWorkPackages() : readWorkPackagesFromDisk(),
       isSupabaseConfigured() ? listAllScenarios({ includeReplaced: true }) : readScenariosFromDisk(),
+      isSupabaseConfigured() ? listGuides() : listGuidesOnDisk(),
     ]);
     let confluence = { connected: false };
     try {
@@ -1021,6 +1155,7 @@ app.get("/api/admin/export", requireAuth, async (_req, res) => {
       categories: categories || [],
       workPackages: workPackages || [],
       scenarios: scenarios || [],
+      guides: guides || [],
       confluence,
     };
     res.setHeader(

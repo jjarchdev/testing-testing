@@ -27,7 +27,7 @@ procedures. Deployed at `https://{{APP_HOST}}`.
 | Failed-session-exchange IPs | Any visitor attempting to use `/api/auth/session` | HTTP request | Same 15-min in-memory sliding window |
 | Failed-login IP addresses | Any web visitor attempting to log in | HTTP request | Node process memory, 15 min |
 | Confluence account label + tokens | Admin who connects Confluence | Atlassian OAuth flow | Supabase `confluence_connections` (tokens encrypted AES-256-GCM at app layer) |
-| Scenario / category / tag / image content | Whoever the admin writes about | Admin input | Supabase `scenarios`, `categories`; images in Supabase Storage bucket `scenario-images` |
+| Scenario / guide / category / tag / image content | Whoever the admin writes about or photographs | Admin input | Supabase `scenarios`, `scenarios_v2`, `guides`, `categories`; images in Supabase Storage bucket `scenario-images` |
 
 **Purposes and legal basis (Art 6):**
 
@@ -83,15 +83,15 @@ Before production launch:
 |---|---|---|
 | Session cookie | 8 hours (or immediately on logout) | Client cookie expiry / `POST /api/auth/logout` |
 | Failed-login IPs | 15 minutes | In-memory sliding window in `server/index.js` |
-| Scenarios & categories | Until admin deletes | Admin UI (also cascade-deletes any uploaded images) |
-| Uploaded images | Until parent scenario is deleted or the image is replaced | Automatic via `removeStoredImages()` |
+| Scenarios, knowledge base guides & categories | Until admin deletes | Admin UI (also deletes any uploaded images) |
+| Uploaded images | Until the parent scenario or guide is deleted or the image is removed from it | Automatic via `removeStoredImages()` |
 | Confluence tokens | Until admin clicks Disconnect | `DELETE /api/confluence/disconnect` |
 | Server logs | Whatever Render's default retention is (typically 7 days) | Managed by Render |
 | Supabase backups | Per Supabase plan (Free: 7 days; Pro: 30 days point-in-time recovery) | Managed by Supabase |
 
 Data-subject rights (Art 15–20) can be served by:
 
-- **Access & portability:** `GET /api/admin/export` returns a JSON dump of all categories, scenarios, and Confluence connection metadata (no secrets). Provide this to a requester.
+- **Access & portability:** `GET /api/admin/export` returns a JSON dump of all categories, work packages, scenarios, knowledge base guides, and Confluence connection metadata (no secrets). Provide this to a requester.
 - **Rectification & erasure:** admin UI (edit / delete).
 - **Objection / restriction:** contact `{{CONTROLLER_EMAIL}}`.
 

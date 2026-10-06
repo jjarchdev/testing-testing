@@ -240,12 +240,15 @@ export function sanitizeSituations(raw, options = {}) {
     while (usedIds.has(id)) id = `${id}x`.slice(0, 40);
     usedIds.add(id);
     const image_urls = sanitizeImageUrls(item.image_urls, options);
+    const acceptance_image_urls = sanitizeImageUrls(item.acceptance_image_urls, options);
     out.push({
       id,
       verdict,
       translations,
       image_urls,
       image_captions: sanitizeImageCaptions(item.image_captions, image_urls),
+      acceptance_image_urls,
+      acceptance_image_captions: sanitizeImageCaptions(item.acceptance_image_captions, acceptance_image_urls),
       solution_as_checklist: coerceSolutionAsChecklist(item.solution_as_checklist),
       acceptance_as_checklist: coerceSolutionAsChecklist(item.acceptance_as_checklist),
     });
@@ -317,7 +320,10 @@ export function scenarioImageUrlList(scenario) {
   };
   add(scenario?.image_urls);
   if (!urls.length && typeof scenario?.image_url === "string") add([scenario.image_url.trim()]);
-  for (const s of scenario?.situations || []) add(s.image_urls);
+  for (const s of scenario?.situations || []) {
+    add(s.image_urls);
+    add(s.acceptance_image_urls);
+  }
   return urls;
 }
 
@@ -339,6 +345,8 @@ export function pickScenarioView(scenario, preferred) {
         acceptance: t.acceptance || "",
         image_urls: s.image_urls || [],
         image_captions: s.image_captions || {},
+        acceptance_image_urls: s.acceptance_image_urls || [],
+        acceptance_image_captions: s.acceptance_image_captions || {},
         solution_as_checklist: s.solution_as_checklist === true,
         acceptance_as_checklist: s.acceptance_as_checklist === true,
       });
@@ -360,6 +368,8 @@ export function pickScenarioView(scenario, preferred) {
         acceptance: legacy.acceptance,
         image_urls: scenarioImageUrlList(scenario),
         image_captions: scenario.image_captions || {},
+        acceptance_image_urls: [],
+        acceptance_image_captions: {},
         solution_as_checklist: scenario.solution_as_checklist === true,
         acceptance_as_checklist: scenario.acceptance_as_checklist === true,
       },
@@ -404,6 +414,8 @@ export function scenarioToEditable(scenario) {
               translations: situationTranslations,
               image_urls: scenarioImageUrlList(scenario),
               image_captions: scenario.image_captions || {},
+              acceptance_image_urls: [],
+              acceptance_image_captions: {},
               solution_as_checklist: scenario.solution_as_checklist === true,
               acceptance_as_checklist: scenario.acceptance_as_checklist === true,
             },
@@ -448,4 +460,4 @@ export function normalizeScenario(s, options = {}) {
   return out;
 }
 
-export { sanitizeImageUrl, sanitizeConfluencePageId, sanitizeConfluenceUrl };
+export { sanitizeImageUrl, sanitizeConfluencePageId, sanitizeConfluenceUrl, sanitizeTags };

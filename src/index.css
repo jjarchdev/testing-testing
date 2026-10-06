@@ -34,6 +34,10 @@ body {
     padding: 1rem;
   }
 
+  .guide-step {
+    break-inside: avoid;
+  }
+
   .print-root h1,
   .print-root h2,
   .print-root p,

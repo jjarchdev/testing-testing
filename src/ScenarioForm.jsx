@@ -3,7 +3,7 @@ import { useBlocker } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { uploadImageFile } from "./api.js";
 import { useAppData } from "./AppData.jsx";
-import { ScenarioDetail } from "./EmployeeView.jsx";
+import { ScenarioDetail } from "./ScenarioDetail.jsx";
 import { useIsNarrow } from "./useIsNarrow.js";
 import Dropdown from "./Dropdown.jsx";
 import { styles } from "./styles.js";
@@ -29,6 +29,8 @@ function blankSituation() {
     texts: Object.fromEntries(SUPPORTED_SCENARIO_LOCALES.map((lng) => [lng, { ...BLANK_TEXT }])),
     image_urls: [],
     image_captions: {},
+    acceptance_image_urls: [],
+    acceptance_image_captions: {},
     solution_as_checklist: false,
     acceptance_as_checklist: false,
   };
@@ -51,6 +53,8 @@ function buildForm(initial) {
     ),
     image_urls: s.image_urls || [],
     image_captions: s.image_captions || {},
+    acceptance_image_urls: s.acceptance_image_urls || [],
+    acceptance_image_captions: s.acceptance_image_captions || {},
     solution_as_checklist: s.solution_as_checklist === true,
     acceptance_as_checklist: s.acceptance_as_checklist === true,
   }));
@@ -120,6 +124,8 @@ function formToPayload(form, enabledLangs, primaryLanguage, replacesLegacyId) {
       translations: situationTranslations,
       image_urls: s.image_urls,
       image_captions: s.image_captions,
+      acceptance_image_urls: s.acceptance_image_urls,
+      acceptance_image_captions: s.acceptance_image_captions,
       solution_as_checklist: s.solution_as_checklist,
       acceptance_as_checklist: s.acceptance_as_checklist,
     };
@@ -171,25 +177,36 @@ function TextFormatToolbar({ onBold, onItalic, onList, t }) {
   );
 }
 
-function SituationImages({ situation, onUpdate, disabled, setFormError }) {
+function SituationImages({
+  situation,
+  onUpdate,
+  disabled,
+  setFormError,
+  urlsKey = "image_urls",
+  captionsKey = "image_captions",
+  label,
+  hint,
+  withCover = true,
+}) {
   const { t } = useTranslation();
   const [urlDraft, setUrlDraft] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [confirmRemoveIndex, setConfirmRemoveIndex] = useState(null);
-  const imageUrlsRef = useRef(situation.image_urls);
-  imageUrlsRef.current = situation.image_urls;
+  const imageUrlsRef = useRef(situation[urlsKey]);
+  imageUrlsRef.current = situation[urlsKey];
   const fileInputId = useId();
-  const urls = situation.image_urls;
+  const urls = situation[urlsKey];
+  const captions = situation[captionsKey];
   const atImageCap = urls.length >= MAX_SCENARIO_IMAGES;
   const locked = disabled || uploading;
 
   const appendImageUrls = (toAdd) => {
     setFormError("");
     onUpdate((s) => {
-      const seen = new Set(s.image_urls);
-      const next = [...s.image_urls];
+      const seen = new Set(s[urlsKey]);
+      const next = [...s[urlsKey]];
       for (const url of toAdd) {
         const clean = String(url || "").trim();
         if (!clean || seen.has(clean)) continue;
@@ -197,7 +214,7 @@ function SituationImages({ situation, onUpdate, disabled, setFormError }) {
         seen.add(clean);
         next.push(clean);
       }
-      return { ...s, image_urls: next };
+      return { ...s, [urlsKey]: next };
     });
   };
 
@@ -205,29 +222,29 @@ function SituationImages({ situation, onUpdate, disabled, setFormError }) {
     setFormError("");
     setConfirmRemoveIndex(null);
     onUpdate((s) => {
-      const removedUrl = s.image_urls[index];
-      const nextCaptions = { ...s.image_captions };
+      const removedUrl = s[urlsKey][index];
+      const nextCaptions = { ...s[captionsKey] };
       delete nextCaptions[removedUrl];
       return {
         ...s,
-        image_urls: s.image_urls.filter((_, i) => i !== index),
-        image_captions: nextCaptions,
+        [urlsKey]: s[urlsKey].filter((_, i) => i !== index),
+        [captionsKey]: nextCaptions,
       };
     });
   };
 
   const patchCaption = (url, caption) => {
-    onUpdate((s) => ({ ...s, image_captions: { ...s.image_captions, [url]: caption } }));
+    onUpdate((s) => ({ ...s, [captionsKey]: { ...s[captionsKey], [url]: caption } }));
   };
 
   const moveImage = (index, delta) => {
     setFormError("");
     onUpdate((s) => {
-      const next = [...s.image_urls];
+      const next = [...s[urlsKey]];
       const target = index + delta;
       if (target < 0 || target >= next.length) return s;
       [next[index], next[target]] = [next[target], next[index]];
-      return { ...s, image_urls: next };
+      return { ...s, [urlsKey]: next };
     });
   };
 
@@ -235,11 +252,11 @@ function SituationImages({ situation, onUpdate, disabled, setFormError }) {
     if (index <= 0) return;
     setFormError("");
     onUpdate((s) => {
-      if (index >= s.image_urls.length) return s;
-      const next = [...s.image_urls];
+      if (index >= s[urlsKey].length) return s;
+      const next = [...s[urlsKey]];
       const [picked] = next.splice(index, 1);
       next.unshift(picked);
-      return { ...s, image_urls: next };
+      return { ...s, [urlsKey]: next };
     });
   };
 
@@ -292,7 +309,8 @@ function SituationImages({ situation, onUpdate, disabled, setFormError }) {
 
   return (
     <>
-      <label style={styles.label}>{t("scenarioForm.images")}</label>
+      <label style={styles.label}>{label || t("scenarioForm.images")}</label>
+      {hint ? <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>{hint}</p> : null}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
         <input
           style={{ ...styles.input, flex: "1 1 220px", marginBottom: 0 }}
@@ -414,7 +432,7 @@ function SituationImages({ situation, onUpdate, disabled, setFormError }) {
                 style={{
                   position: "relative",
                   borderRadius: 10,
-                  border: index === 0 ? "2px solid #4fa3ff" : "1px solid #1a2a3a",
+                  border: withCover && index === 0 ? "2px solid #4fa3ff" : "1px solid #1a2a3a",
                   overflow: "hidden",
                   background: "#0d1520",
                 }}
@@ -428,7 +446,7 @@ function SituationImages({ situation, onUpdate, disabled, setFormError }) {
                   }}
                   style={{ display: "block", width: "100%", height: 110, objectFit: "cover" }}
                 />
-                {index === 0 ? (
+                {withCover && index === 0 ? (
                   <div
                     style={{
                       position: "absolute",
@@ -459,7 +477,7 @@ function SituationImages({ situation, onUpdate, disabled, setFormError }) {
                     outline: "none",
                   }}
                   placeholder={t("scenarioForm.captionPlaceholder")}
-                  value={situation.image_captions[url] || ""}
+                  value={captions[url] || ""}
                   maxLength={200}
                   disabled={locked}
                   onChange={(e) => patchCaption(url, e.target.value)}
@@ -486,7 +504,7 @@ function SituationImages({ situation, onUpdate, disabled, setFormError }) {
                     ↓
                   </button>
                 </div>
-                {index > 0 ? (
+                {withCover && index > 0 ? (
                   <button
                     type="button"
                     style={{ ...styles.ghostBtn, width: "100%", borderRadius: 0, fontSize: "0.75rem", padding: "0.35rem" }}
@@ -555,6 +573,7 @@ function SituationEditor({
   onRemove,
   onMove,
   fixed,
+  onConvert,
   disabled,
   narrow,
   setFormError,
@@ -815,6 +834,29 @@ function SituationEditor({
                   ? t("scenarioForm.acceptanceHelpChecklist")
                   : t("scenarioForm.acceptanceHelp")}
               </p>
+              {fixed ? (
+                <>
+                  <label style={styles.label}>{t("scenarioForm.acceptanceImages")}</label>
+                  <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>
+                    {t("scenarioForm.acceptanceNeedsNewFormat")}
+                  </p>
+                  <button type="button" style={styles.ghostBtn} disabled={disabled} onClick={onConvert}>
+                    {t("scenarioForm.acceptanceSwitch")}
+                  </button>
+                </>
+              ) : (
+                <SituationImages
+                  situation={situation}
+                  onUpdate={onUpdate}
+                  disabled={disabled}
+                  setFormError={setFormError}
+                  urlsKey="acceptance_image_urls"
+                  captionsKey="acceptance_image_captions"
+                  label={t("scenarioForm.acceptanceImages")}
+                  hint={t("scenarioForm.acceptanceImagesHint")}
+                  withCover={false}
+                />
+              )}
             </div>
           </div>
 
@@ -1064,6 +1106,8 @@ export default function ScenarioForm({
           acceptance: s.texts[activeLang].acceptance,
           image_urls: s.image_urls,
           image_captions: s.image_captions,
+          acceptance_image_urls: s.acceptance_image_urls,
+          acceptance_image_captions: s.acceptance_image_captions,
           solution_as_checklist: s.solution_as_checklist,
           acceptance_as_checklist: s.acceptance_as_checklist,
         })),
@@ -1307,6 +1351,7 @@ export default function ScenarioForm({
               onRemove={() => removeSituation(situation.id)}
               onMove={(delta) => moveSituation(index, delta)}
               fixed={legacyMode}
+              onConvert={() => setConverting(true)}
               disabled={locked}
               narrow={narrow}
               setFormError={setFormError}

@@ -13,6 +13,7 @@ import {
   sanitizeImageUrls,
   withoutReplacedLegacy,
 } from "../shared/scenarioSchema.mjs";
+import { guideImageUrlList, normalizeGuide } from "../shared/guideSchema.mjs";
 
 const MIGRATION_HINT =
   "The database is missing the new scenario tables. Run supabase/migrations/010_situations.sql and 011_scenarios_v2_replaces.sql in the Supabase SQL editor, then try again.";
@@ -327,7 +328,13 @@ export async function deleteWorkPackage(slug) {
     .select("scenario_id", { count: "exact", head: true })
     .eq("wp_slug", slug);
   if (scenarioCountError && !isMissingRelationError(scenarioCountError)) throw scenarioCountError;
-  const inUse = (count || 0) + (scenarioCountError ? 0 : scenarioCount || 0);
+  const { count: guideCount, error: guideCountError } = await sb
+    .from(GUIDE_TABLE)
+    .select("id", { count: "exact", head: true })
+    .contains("wp_slugs", [slug]);
+  if (guideCountError && !isMissingRelationError(guideCountError)) throw guideCountError;
+  const inUse =
+    (count || 0) + (scenarioCountError ? 0 : scenarioCount || 0) + (guideCountError ? 0 : guideCount || 0);
   if (inUse > 0) {
     return { deleted: false, reason: "in_use", count: inUse };
   }
@@ -335,6 +342,33 @@ export async function deleteWorkPackage(slug) {
   const { error } = await sb.from("work_packages").delete().eq("slug", slug);
   if (error) throw error;
   return { deleted: true };
+}
+
+// Puts the work packages in exactly the order given and renumbers them 1..n, so the order always sticks.
+// Any work package missing from the list keeps its relative position at the end.
+export async function reorderWorkPackages(orderedSlugs) {
+  const sb = getSupabase();
+  const current = await listWorkPackages();
+  const bySlug = new Map(current.map((w) => [w.slug, w]));
+  const seen = new Set();
+  const ordered = [];
+  for (const slug of Array.isArray(orderedSlugs) ? orderedSlugs : []) {
+    if (bySlug.has(slug) && !seen.has(slug)) {
+      seen.add(slug);
+      ordered.push(slug);
+    }
+  }
+  for (const w of current) if (!seen.has(w.slug)) ordered.push(w.slug);
+  const changes = ordered
+    .map((slug, i) => ({ slug, sort_order: i + 1 }))
+    .filter((c) => bySlug.get(c.slug).sort_order !== c.sort_order);
+  await Promise.all(
+    changes.map(async (c) => {
+      const { error } = await sb.from("work_packages").update({ sort_order: c.sort_order }).eq("slug", c.slug);
+      if (error) throw error;
+    })
+  );
+  return listWorkPackages();
 }
 
 export async function listCategories() {
@@ -723,6 +757,163 @@ export async function deleteScenarioById(id) {
     const { removeStoredImages, imageUrlsFromScenario } = await import("./upload.js");
     await removeStoredImages(imageUrlsFromScenario(previous));
   }
+}
+
+const GUIDE_TABLE = "guides";
+const GUIDE_MIGRATION_HINT =
+  "The database is missing the knowledge base table. Run supabase/migrations/012_knowledge_base.sql in the Supabase SQL editor, then try again.";
+
+function throwGuideMigrationHintIfNeeded(error) {
+  if (isMissingRelationError(error) || isMissingColumnError(error)) {
+    throw new Error(GUIDE_MIGRATION_HINT);
+  }
+  throw error;
+}
+
+async function wpLabelsBySlug() {
+  return new Map((await listWorkPackages()).map((w) => [w.slug, w.label]));
+}
+
+function rowToGuide(row, labelBySlug) {
+  const slugs = Array.isArray(row.wp_slugs) ? row.wp_slugs : [];
+  return normalizeGuide(
+    {
+      id: Number(row.id),
+      title: row.title,
+      translations: row.translations && typeof row.translations === "object" ? row.translations : {},
+      steps: Array.isArray(row.steps) ? row.steps : [],
+      wps: slugs.map((s) => labelBySlug.get(s)).filter(Boolean),
+      is_published: typeof row.is_published === "boolean" ? row.is_published : undefined,
+      sort_order: row.sort_order,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    },
+    { allowLocalUploads: false }
+  );
+}
+
+export async function listGuides({ publishedOnly = false } = {}) {
+  const sb = getSupabase();
+  let query = sb
+    .from(GUIDE_TABLE)
+    .select("*")
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
+  if (publishedOnly) query = query.eq("is_published", true);
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingRelationError(error)) return [];
+    throw error;
+  }
+  if (!data?.length) return [];
+  const labels = await wpLabelsBySlug();
+  return data.map((row) => rowToGuide(row, labels)).filter(Boolean);
+}
+
+export async function getGuideById(id) {
+  const sb = getSupabase();
+  const { data, error } = await sb.from(GUIDE_TABLE).select("*").eq("id", id).maybeSingle();
+  if (error) {
+    if (isMissingRelationError(error)) return null;
+    throw error;
+  }
+  return data ? rowToGuide(data, await wpLabelsBySlug()) : null;
+}
+
+export async function insertGuide(payload) {
+  const sb = getSupabase();
+  const wp_slugs = await resolveWpSlugs(payload.wps);
+  const { data: last, error: lastError } = await sb
+    .from(GUIDE_TABLE)
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lastError) throwGuideMigrationHintIfNeeded(lastError);
+  const sort_order = (Number(last?.sort_order) || 0) + 1;
+  const { data, error } = await sb
+    .from(GUIDE_TABLE)
+    .insert({
+      title: payload.title,
+      translations: payload.translations,
+      steps: payload.steps,
+      wp_slugs,
+      sort_order,
+      is_published: payload.is_published !== false,
+    })
+    .select("*")
+    .single();
+  if (error) throwGuideMigrationHintIfNeeded(error);
+  return rowToGuide(data, await wpLabelsBySlug());
+}
+
+export async function updateGuide(id, payload) {
+  const sb = getSupabase();
+  const previous = await getGuideById(id);
+  if (!previous) return null;
+  const wp_slugs = await resolveWpSlugs(payload.wps);
+  const { error } = await sb
+    .from(GUIDE_TABLE)
+    .update({
+      title: payload.title,
+      translations: payload.translations,
+      steps: payload.steps,
+      wp_slugs,
+      is_published: payload.is_published !== false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) throwGuideMigrationHintIfNeeded(error);
+  const saved = await getGuideById(id);
+  const { removeStoredImages } = await import("./upload.js");
+  const keep = new Set(guideImageUrlList(saved));
+  await removeStoredImages(guideImageUrlList(previous).filter((u) => !keep.has(u)));
+  return saved;
+}
+
+export async function deleteGuide(id) {
+  const sb = getSupabase();
+  const previous = await getGuideById(id);
+  if (!previous) return false;
+  const { error } = await sb.from(GUIDE_TABLE).delete().eq("id", id);
+  if (error) throw error;
+  const { removeStoredImages } = await import("./upload.js");
+  await removeStoredImages(guideImageUrlList(previous));
+  return true;
+}
+
+export async function reorderGuides(orderedIds) {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from(GUIDE_TABLE)
+    .select("id, sort_order")
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
+  if (error) {
+    if (isMissingRelationError(error)) return [];
+    throw error;
+  }
+  const rows = data || [];
+  const byId = new Map(rows.map((r) => [Number(r.id), r]));
+  const seen = new Set();
+  const ordered = [];
+  for (const id of Array.isArray(orderedIds) ? orderedIds : []) {
+    if (byId.has(id) && !seen.has(id)) {
+      seen.add(id);
+      ordered.push(id);
+    }
+  }
+  for (const r of rows) if (!seen.has(Number(r.id))) ordered.push(Number(r.id));
+  const changes = ordered
+    .map((id, i) => ({ id, sort_order: i + 1 }))
+    .filter((c) => Number(byId.get(c.id).sort_order) !== c.sort_order);
+  await Promise.all(
+    changes.map(async (c) => {
+      const { error: updateError } = await sb.from(GUIDE_TABLE).update({ sort_order: c.sort_order }).eq("id", c.id);
+      if (updateError) throw updateError;
+    })
+  );
+  return listGuides();
 }
 
 export async function isConfluencePagePublic(pageId) {

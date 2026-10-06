@@ -9,10 +9,12 @@ import {
   slugifyLabel,
 } from "../shared/categoryMap.mjs";
 import { isScenarioV2Id, normalizeScenario } from "../shared/scenarioSchema.mjs";
+import { normalizeGuide } from "../shared/guideSchema.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const DATA_FILE = process.env.SCENARIOS_DATA_PATH || path.join(ROOT, "data", "scenarios.json");
+const GUIDES_FILE = process.env.GUIDES_DATA_PATH || path.join(ROOT, "data", "guides.json");
 const STORAGE_VERSION = 3;
 
 async function readRaw() {
@@ -411,9 +413,11 @@ export async function deleteWorkPackageOnDisk(slug) {
   if (!store) throw new Error("Read failed");
   const wp = store.workPackages.find((w) => w.slug === slug);
   if (!wp) return { deleted: false, reason: "not_found" };
+  const guides = (await readGuidesFile()).guides;
   const count =
     store.categories.filter((c) => (c.wps || []).includes(wp.label)).length +
-    store.scenarios.filter((s) => (s.wps || []).includes(wp.label)).length;
+    store.scenarios.filter((s) => (s.wps || []).includes(wp.label)).length +
+    guides.filter((g) => (g.wp_slugs || []).includes(slug)).length;
   if (count > 0) {
     return { deleted: false, reason: "in_use", count };
   }
@@ -423,6 +427,181 @@ export async function deleteWorkPackageOnDisk(slug) {
     scenarios: store.scenarios,
   });
   return { deleted: true };
+}
+
+// Puts the work packages in exactly the order given and renumbers them 1..n, so the order always sticks.
+// Any work package missing from the list keeps its relative position at the end.
+export async function reorderWorkPackagesOnDisk(orderedSlugs) {
+  const store = await loadStore();
+  if (!store) throw new Error("Read failed");
+  const bySlug = new Map(store.workPackages.map((w) => [w.slug, w]));
+  const seen = new Set();
+  const ordered = [];
+  for (const slug of Array.isArray(orderedSlugs) ? orderedSlugs : []) {
+    if (bySlug.has(slug) && !seen.has(slug)) {
+      seen.add(slug);
+      ordered.push(bySlug.get(slug));
+    }
+  }
+  for (const w of store.workPackages) if (!seen.has(w.slug)) ordered.push(w);
+  const result = await persistStore({
+    categories: store.categories,
+    workPackages: ordered.map((w, i) => ({ ...w, sort_order: i + 1 })),
+    scenarios: store.scenarios,
+  });
+  return result.workPackages;
+}
+
+let guidesQueue = Promise.resolve();
+
+async function readGuidesFile() {
+  if (!existsSync(GUIDES_FILE)) return { nextId: 1, guides: [] };
+  let parsed;
+  try {
+    parsed = JSON.parse(await fs.readFile(GUIDES_FILE, "utf8"));
+  } catch {
+    throw new Error("Guides file is unreadable");
+  }
+  const guides = Array.isArray(parsed?.guides) ? parsed.guides : [];
+  const maxId = guides.reduce((max, g) => Math.max(max, Number(g.id) || 0), 0);
+  return { nextId: Math.max(Number(parsed?.nextId) || 1, maxId + 1), guides };
+}
+
+async function writeGuidesFile(data) {
+  await fs.mkdir(path.dirname(GUIDES_FILE), { recursive: true });
+  const tmp = `${GUIDES_FILE}.${process.pid}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify({ v: 1, ...data }, null, 2), "utf8");
+  await fs.rename(tmp, GUIDES_FILE);
+}
+
+function mutateGuides(mutator) {
+  const run = guidesQueue.then(async () => {
+    const data = await readGuidesFile();
+    const result = await mutator(data);
+    await writeGuidesFile(data);
+    return result;
+  });
+  guidesQueue = run.catch(() => {});
+  return run;
+}
+
+function guideFromRaw(raw, labelBySlug) {
+  return normalizeGuide(
+    { ...raw, wps: (raw.wp_slugs || []).map((s) => labelBySlug.get(s)).filter(Boolean) },
+    { allowLocalUploads: true }
+  );
+}
+
+async function wpLabelsBySlug() {
+  const store = await loadStore();
+  return new Map((store?.workPackages || []).map((w) => [w.slug, w.label]));
+}
+
+function slugsForLabels(store, labels) {
+  const slugs = [];
+  for (const wanted of labels || []) {
+    const found = store.workPackages.find((p) => p.label === wanted || p.slug === wanted);
+    if (!found) throw new Error(`Unknown WP: ${wanted}`);
+    slugs.push(found.slug);
+  }
+  return slugs;
+}
+
+function bySortOrder(a, b) {
+  return (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id;
+}
+
+export async function listGuidesOnDisk({ publishedOnly = false } = {}) {
+  const [{ guides }, labels] = await Promise.all([readGuidesFile(), wpLabelsBySlug()]);
+  return guides
+    .map((g) => guideFromRaw(g, labels))
+    .filter(Boolean)
+    .filter((g) => !publishedOnly || g.is_published)
+    .sort(bySortOrder);
+}
+
+export async function getGuideOnDisk(id) {
+  const [{ guides }, labels] = await Promise.all([readGuidesFile(), wpLabelsBySlug()]);
+  const raw = guides.find((g) => g.id === id);
+  return raw ? guideFromRaw(raw, labels) : null;
+}
+
+export async function insertGuideOnDisk(payload) {
+  const store = await loadStore();
+  if (!store) throw new Error("Read failed");
+  const wp_slugs = slugsForLabels(store, payload.wps);
+  const labels = new Map(store.workPackages.map((w) => [w.slug, w.label]));
+  return mutateGuides((data) => {
+    const now = new Date().toISOString();
+    const raw = {
+      id: data.nextId,
+      title: payload.title,
+      translations: payload.translations,
+      steps: payload.steps,
+      wp_slugs,
+      sort_order: data.guides.reduce((max, g) => Math.max(max, g.sort_order ?? 0), 0) + 1,
+      is_published: payload.is_published !== false,
+      created_at: now,
+      updated_at: now,
+    };
+    data.nextId += 1;
+    data.guides.push(raw);
+    return guideFromRaw(raw, labels);
+  });
+}
+
+export async function updateGuideOnDisk(id, payload) {
+  const store = await loadStore();
+  if (!store) throw new Error("Read failed");
+  const wp_slugs = slugsForLabels(store, payload.wps);
+  const labels = new Map(store.workPackages.map((w) => [w.slug, w.label]));
+  return mutateGuides((data) => {
+    const index = data.guides.findIndex((g) => g.id === id);
+    if (index < 0) return null;
+    const previous = guideFromRaw(data.guides[index], labels);
+    const raw = {
+      ...data.guides[index],
+      title: payload.title,
+      translations: payload.translations,
+      steps: payload.steps,
+      wp_slugs,
+      is_published: payload.is_published !== false,
+      updated_at: new Date().toISOString(),
+    };
+    data.guides[index] = raw;
+    return { guide: guideFromRaw(raw, labels), previous };
+  });
+}
+
+export async function deleteGuideOnDisk(id) {
+  const labels = await wpLabelsBySlug();
+  return mutateGuides((data) => {
+    const index = data.guides.findIndex((g) => g.id === id);
+    if (index < 0) return null;
+    const [removed] = data.guides.splice(index, 1);
+    return guideFromRaw(removed, labels);
+  });
+}
+
+export async function reorderGuidesOnDisk(orderedIds) {
+  const labels = await wpLabelsBySlug();
+  return mutateGuides((data) => {
+    const byId = new Map(data.guides.map((g) => [g.id, g]));
+    const seen = new Set();
+    const ordered = [];
+    for (const id of Array.isArray(orderedIds) ? orderedIds : []) {
+      if (byId.has(id) && !seen.has(id)) {
+        seen.add(id);
+        ordered.push(byId.get(id));
+      }
+    }
+    for (const g of [...data.guides].sort(bySortOrder)) if (!seen.has(g.id)) ordered.push(g);
+    ordered.forEach((g, i) => {
+      g.sort_order = i + 1;
+    });
+    data.guides = ordered;
+    return ordered.map((g) => guideFromRaw(g, labels)).filter(Boolean);
+  });
 }
 
 export function withPublishedDefault(scenario, isPublished = true) {
