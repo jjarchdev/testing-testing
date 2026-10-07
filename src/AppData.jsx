@@ -5,6 +5,26 @@ import { styles } from "./styles.js";
 
 const AppDataContext = createContext(null);
 
+const EMPTY_SERVER_CONFIG = {
+  loaded: false,
+  authConfigured: true,
+  requireUsername: false,
+  envLoginAvailable: false,
+  supabaseAuthAvailable: false,
+  supabaseUrl: null,
+  supabaseAnonKey: null,
+  privacyControllerName: null,
+  privacyControllerEmail: null,
+};
+
+async function fetchList(path, key) {
+  const res = await apiFetch(path);
+  if (!res.ok) throw new Error(String(res.status));
+  const list = (await res.json())?.[key];
+  if (!Array.isArray(list)) throw new Error("bad response");
+  return list;
+}
+
 export function useAppData() {
   const ctx = useContext(AppDataContext);
   if (!ctx) throw new Error("useAppData outside provider");
@@ -17,17 +37,7 @@ export function AppDataProvider({ children }) {
   const [guides, setGuides] = useState(null);
   const [guidesLoadError, setGuidesLoadError] = useState(null);
   const [scenariosLoadError, setScenariosLoadError] = useState(null);
-  const [serverConfig, setServerConfig] = useState({
-    loaded: false,
-    authConfigured: true,
-    requireUsername: false,
-    envLoginAvailable: false,
-    supabaseAuthAvailable: false,
-    supabaseUrl: null,
-    supabaseAnonKey: null,
-    privacyControllerName: null,
-    privacyControllerEmail: null,
-  });
+  const [serverConfig, setServerConfig] = useState(EMPTY_SERVER_CONFIG);
   const [adminSession, setAdminSession] = useState(false);
   const [adminEmail, setAdminEmail] = useState(null);
   const [notification, setNotification] = useState(null);
@@ -51,12 +61,7 @@ export function AppDataProvider({ children }) {
 
   const loadWorkPackagesFromServer = useCallback(async () => {
     try {
-      const res = await apiFetch("/api/work-packages");
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      const list = Array.isArray(data?.workPackages) ? data.workPackages : null;
-      if (!list) throw new Error("bad response");
-      setWorkPackages(list);
+      setWorkPackages(await fetchList("/api/work-packages", "workPackages"));
     } catch {
       setWorkPackages([]);
     }
@@ -65,12 +70,7 @@ export function AppDataProvider({ children }) {
   const loadScenariosFromServer = useCallback(async () => {
     setScenariosLoadError(null);
     try {
-      const res = await apiFetch("/api/scenarios");
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      const list = Array.isArray(data?.scenarios) ? data.scenarios : null;
-      if (!list) throw new Error("bad response");
-      setScenarios(list);
+      setScenarios(await fetchList("/api/scenarios", "scenarios"));
     } catch {
       setScenarios([]);
       setScenariosLoadError(i18n.t("employee.loadError"));
@@ -80,12 +80,7 @@ export function AppDataProvider({ children }) {
   const loadGuidesFromServer = useCallback(async () => {
     setGuidesLoadError(null);
     try {
-      const res = await apiFetch("/api/guides");
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      const list = Array.isArray(data?.guides) ? data.guides : null;
-      if (!list) throw new Error("bad response");
-      setGuides(list);
+      setGuides(await fetchList("/api/guides", "guides"));
     } catch {
       setGuides([]);
       setGuidesLoadError(i18n.t("kb.loadError"));
@@ -120,17 +115,7 @@ export function AppDataProvider({ children }) {
       })
       .catch(() => {
         if (cancelled) return;
-        setServerConfig({
-          loaded: true,
-          authConfigured: false,
-          requireUsername: false,
-          envLoginAvailable: false,
-          supabaseAuthAvailable: false,
-          supabaseUrl: null,
-          supabaseAnonKey: null,
-          privacyControllerName: null,
-          privacyControllerEmail: null,
-        });
+        setServerConfig({ ...EMPTY_SERVER_CONFIG, loaded: true, authConfigured: false });
         setAdminSession(false);
         setAdminEmail(null);
       });

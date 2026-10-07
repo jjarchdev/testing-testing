@@ -14,6 +14,7 @@ import {
   withoutReplacedLegacy,
 } from "../shared/scenarioSchema.mjs";
 import { guideImageUrlList, normalizeGuide } from "../shared/guideSchema.mjs";
+import { applyOrder } from "../shared/ordering.mjs";
 
 const MIGRATION_HINT =
   "The database is missing the new scenario tables. Run supabase/migrations/010_situations.sql and 011_scenarios_v2_replaces.sql in the Supabase SQL editor, then try again.";
@@ -91,7 +92,7 @@ export function getSupabase() {
   return client;
 }
 
-export function rowToScenario(row) {
+function rowToScenario(row) {
   if (!row) return null;
   const allowLocal = { allowLocalUploads: false };
   const fromArray = Array.isArray(row.image_urls) ? row.image_urls : [];
@@ -158,12 +159,6 @@ async function loadWpsByCategorySlug() {
     by[slug] = by[slug].map((x) => x.label);
   }
   return by;
-}
-
-async function attachCategoryWps(category) {
-  if (!category) return null;
-  const by = await loadWpsByCategorySlug();
-  return { ...category, wps: by[category.slug] || [] };
 }
 
 async function attachCategoryWpsList(categories) {
@@ -241,21 +236,6 @@ async function resolveWpSlugs(labelsOrSlugs) {
     slugs.push(found.slug);
   }
   return slugs;
-}
-
-async function replaceCategoryWps(categorySlug, labelsOrSlugs) {
-  const slugs = await resolveWpSlugs(labelsOrSlugs);
-  const sb = getSupabase();
-  const { error: delErr } = await sb
-    .from("category_work_packages")
-    .delete()
-    .eq("category_slug", categorySlug);
-  if (delErr) throw delErr;
-  if (!slugs.length) return;
-  const { error } = await sb.from("category_work_packages").insert(
-    slugs.map((wp_slug) => ({ category_slug: categorySlug, wp_slug }))
-  );
-  if (error) throw error;
 }
 
 export async function insertWorkPackage(payload) {
@@ -344,21 +324,11 @@ export async function deleteWorkPackage(slug) {
   return { deleted: true };
 }
 
-// Puts the work packages in exactly the order given and renumbers them 1..n, so the order always sticks.
-// Any work package missing from the list keeps its relative position at the end.
 export async function reorderWorkPackages(orderedSlugs) {
   const sb = getSupabase();
   const current = await listWorkPackages();
   const bySlug = new Map(current.map((w) => [w.slug, w]));
-  const seen = new Set();
-  const ordered = [];
-  for (const slug of Array.isArray(orderedSlugs) ? orderedSlugs : []) {
-    if (bySlug.has(slug) && !seen.has(slug)) {
-      seen.add(slug);
-      ordered.push(slug);
-    }
-  }
-  for (const w of current) if (!seen.has(w.slug)) ordered.push(w.slug);
+  const ordered = applyOrder(current.map((w) => w.slug), orderedSlugs);
   const changes = ordered
     .map((slug, i) => ({ slug, sort_order: i + 1 }))
     .filter((c) => bySlug.get(c.slug).sort_order !== c.sort_order);
@@ -381,138 +351,6 @@ export async function listCategories() {
   if (error) throw error;
   const cats = (data || []).map(rowToCategory).filter(Boolean);
   return attachCategoryWpsList(cats);
-}
-
-async function findCategoryByLabel(label) {
-  const sb = getSupabase();
-  const trimmed = String(label || "").trim();
-  const { data, error } = await sb
-    .from("categories")
-    .select("slug, label, sort_order")
-    .eq("label", trimmed)
-    .maybeSingle();
-  if (error) throw error;
-  return rowToCategory(data);
-}
-
-async function findCategoryBySlug(slug) {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("categories")
-    .select("slug, label, sort_order")
-    .eq("slug", slug)
-    .maybeSingle();
-  if (error) throw error;
-  return rowToCategory(data);
-}
-
-function mapCategoryDbError(error) {
-  if (!error) return;
-  const msg = String(error.message || "");
-  const code = String(error.code || "");
-  if (code === "23505" || /duplicate|unique/i.test(msg)) {
-    throw new Error("Category label already exists");
-  }
-  throw error;
-}
-
-async function nextCategorySortOrder(sb) {
-  const { data, error } = await sb
-    .from("categories")
-    .select("sort_order")
-    .order("sort_order", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  const max =
-    data?.sort_order != null && Number.isFinite(Number(data.sort_order))
-      ? Number(data.sort_order)
-      : 0;
-  return max + 1;
-}
-
-export async function insertCategory(payload) {
-  const sb = getSupabase();
-  const label = String(payload?.label || "").trim();
-  if (!label) throw new Error("Label required");
-
-  let slug = typeof payload?.slug === "string" && payload.slug.trim()
-    ? slugifyLabel(payload.slug)
-    : slugifyLabel(label);
-
-  const existing = await findCategoryBySlug(slug);
-  if (existing) {
-    slug = `${slug}_${Date.now().toString(36)}`;
-  }
-
-  const sort_order =
-    payload?.sort_order != null && Number.isFinite(Number(payload.sort_order))
-      ? Number(payload.sort_order)
-      : await nextCategorySortOrder(sb);
-
-  const { data, error } = await sb
-    .from("categories")
-    .insert({ slug, label, sort_order })
-    .select("slug, label, sort_order")
-    .single();
-  if (error) mapCategoryDbError(error);
-  if (Object.prototype.hasOwnProperty.call(payload || {}, "wps") || payload?.wp) {
-    await replaceCategoryWps(slug, payload.wps ?? payload.wp);
-  }
-  return attachCategoryWps(rowToCategory(data));
-}
-
-export async function updateCategory(slug, payload) {
-  const sb = getSupabase();
-  const current = await findCategoryBySlug(slug);
-  if (!current) return null;
-
-  const updates = {};
-  if (typeof payload?.label === "string" && payload.label.trim()) {
-    updates.label = payload.label.trim();
-  }
-  if (payload?.sort_order != null && Number.isFinite(Number(payload.sort_order))) {
-    updates.sort_order = Number(payload.sort_order);
-  }
-  const hasWps = Object.prototype.hasOwnProperty.call(payload || {}, "wps");
-  if (Object.keys(updates).length === 0 && !hasWps) {
-    return attachCategoryWps(current);
-  }
-
-  if (updates.label && updates.label !== current.label) {
-    const clash = await findCategoryByLabel(updates.label);
-    if (clash && clash.slug !== slug) {
-      throw new Error("Category label already exists");
-    }
-  }
-
-  if (Object.keys(updates).length) {
-    const { error } = await sb.from("categories").update(updates).eq("slug", slug);
-    if (error) mapCategoryDbError(error);
-  }
-  if (hasWps) {
-    await replaceCategoryWps(slug, payload.wps);
-  }
-  return attachCategoryWps(await findCategoryBySlug(slug));
-}
-
-export async function deleteCategory(slug) {
-  const sb = getSupabase();
-  const current = await findCategoryBySlug(slug);
-  if (!current) return { deleted: false, reason: "not_found" };
-
-  const { count, error: countError } = await sb
-    .from("scenarios")
-    .select("id", { count: "exact", head: true })
-    .eq("category_slug", slug);
-  if (countError) throw countError;
-  if ((count || 0) > 0) {
-    return { deleted: false, reason: "in_use", count };
-  }
-
-  const { error } = await sb.from("categories").delete().eq("slug", slug);
-  if (error) throw error;
-  return { deleted: true };
 }
 
 const V2_TABLE = "scenarios_v2";
@@ -810,7 +648,7 @@ export async function listGuides({ publishedOnly = false } = {}) {
   return data.map((row) => rowToGuide(row, labels)).filter(Boolean);
 }
 
-export async function getGuideById(id) {
+async function getGuideById(id) {
   const sb = getSupabase();
   const { data, error } = await sb.from(GUIDE_TABLE).select("*").eq("id", id).maybeSingle();
   if (error) {
@@ -895,15 +733,7 @@ export async function reorderGuides(orderedIds) {
   }
   const rows = data || [];
   const byId = new Map(rows.map((r) => [Number(r.id), r]));
-  const seen = new Set();
-  const ordered = [];
-  for (const id of Array.isArray(orderedIds) ? orderedIds : []) {
-    if (byId.has(id) && !seen.has(id)) {
-      seen.add(id);
-      ordered.push(id);
-    }
-  }
-  for (const r of rows) if (!seen.has(Number(r.id))) ordered.push(Number(r.id));
+  const ordered = applyOrder(rows.map((r) => Number(r.id)), orderedIds);
   const changes = ordered
     .map((id, i) => ({ id, sort_order: i + 1 }))
     .filter((c) => Number(byId.get(c.id).sort_order) !== c.sort_order);

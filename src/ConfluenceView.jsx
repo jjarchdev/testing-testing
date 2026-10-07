@@ -63,7 +63,6 @@ export default function ConfluenceView({ pageId, pageUrl, pageTitle }) {
         <div
           className="confluence-body"
           style={styles.confluenceBody}
-          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: state.page.html || "" }}
         />
       ) : (

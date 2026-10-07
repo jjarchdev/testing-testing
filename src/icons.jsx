@@ -46,6 +46,24 @@ export function ImageIcon() {
   );
 }
 
+export function ChecklistIcon() {
+  return (
+    <svg {...svgProps} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="12" height="12" rx="2.5" />
+      <path d="m5.2 8.2 2 2 3.6-4" />
+    </svg>
+  );
+}
+
+export function LinkIcon() {
+  return (
+    <svg {...svgProps} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.6.6" />
+      <path d="M9.2 6.8a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.6-.6" />
+    </svg>
+  );
+}
+
 export function BookIcon() {
   return (
     <svg {...svgProps} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">

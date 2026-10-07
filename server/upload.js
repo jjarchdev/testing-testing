@@ -8,13 +8,12 @@ import { scenarioImageUrlList } from "../shared/scenarioSchema.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 export const UPLOADS_DIR = path.join(ROOT, "data", "uploads");
-export const STORAGE_BUCKET = "scenario-images";
-const BUCKET = STORAGE_BUCKET;
+const BUCKET = "scenario-images";
 export const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const UPLOAD_TIMEOUT_MS = 45_000;
 
-export function assertImageFile(file) {
+function assertImageFile(file) {
   if (!file) throw new Error("No file uploaded");
   if (!ALLOWED.has(file.mimetype)) {
     throw new Error("Only JPEG, PNG, WebP, or GIF images are allowed");
@@ -39,7 +38,7 @@ function withTimeout(promise, ms, message) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-export async function ensureScenarioImagesBucket(sb = getSupabase()) {
+async function ensureScenarioImagesBucket(sb = getSupabase()) {
   if (!sb) throw new Error("Supabase is not configured");
 
   let buckets;
@@ -160,7 +159,7 @@ export function urlsRemovedFromScenario(previous, nextUrls) {
   return [...before].filter((u) => !after.has(u));
 }
 
-export function storageObjectPathFromPublicUrl(url) {
+function storageObjectPathFromPublicUrl(url) {
   if (typeof url !== "string" || !url.trim()) return null;
   try {
     const u = new URL(url.trim());

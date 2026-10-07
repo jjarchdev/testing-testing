@@ -24,10 +24,6 @@ function requireSupabase() {
   return getSupabase();
 }
 
-function nowSeconds() {
-  return Math.floor(Date.now() / 1000);
-}
-
 function assertConfigured(name, value) {
   if (!value) {
     const err = new Error(`Missing ${name}`);

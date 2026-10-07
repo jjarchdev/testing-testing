@@ -1,24 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { apiFetchWithAuth, logoutAdmin } from "./api.js";
+import { apiFetchWithAuth } from "./api.js";
 import { useAppData } from "./AppData.jsx";
 import LanguageSwitcher from "./LanguageSwitcher.jsx";
 import AdminsPanel from "./AdminsPanel.jsx";
 import ScenarioForm from "./ScenarioForm.jsx";
 import GuidesAdmin from "./GuidesAdmin.jsx";
 import SortableList from "./SortableList.jsx";
+import { VERDICT_COLORS } from "./scenarioUi.jsx";
+import { logoutAdmin } from "./supabase.js";
+import { LanguageBadges, scenarioLangStatus, useUiLanguage } from "./translation.jsx";
 import { ChevronDownIcon, ChevronUpIcon, GripIcon } from "./icons.jsx";
 import { localePath } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
-import { styles } from "./styles.js";
+import { drawerStyle, styles } from "./styles.js";
 import { VERDICT_CODES, scenarioToEditable, scenarioWpList } from "../shared/scenarioSchema.mjs";
-
-const VERDICT_COLORS = {
-  to_be_rejected: "#e74c3c",
-  grey_area: "#e67e22",
-  acceptable: "#1abc9c",
-};
 
 function situationSnippet(situation, preferredLng) {
   const order = [preferredLng, "en", "de", "sq"];
@@ -30,19 +27,6 @@ function situationSnippet(situation, preferredLng) {
 }
 
 const naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-
-const orderBtn = {
-  width: 34,
-  height: 34,
-  padding: 0,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: 8,
-  fontSize: "0.95rem",
-  lineHeight: 1,
-  flexShrink: 0,
-};
 
 function WorkPackageManager({ workPackages, onSave, onDelete, onReorder, onBack }) {
   const { t } = useTranslation();
@@ -229,7 +213,7 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onReorder, onBack 
                       <button
                         type="button"
                         {...ctx.handleProps}
-                        style={{ ...styles.ghostBtn, ...orderBtn, ...ctx.handleStyle, color: "#8899aa" }}
+                        style={{ ...styles.iconBtn, ...ctx.handleStyle, color: "#8899aa" }}
                         aria-label={t("workPackages.dragHandle", { label: wp.label })}
                         title={t("workPackages.dragHandle", { label: wp.label })}
                       >
@@ -238,7 +222,7 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onReorder, onBack 
                       <button
                         type="button"
                         {...ctx.upProps}
-                        style={{ ...styles.ghostBtn, ...orderBtn, opacity: ctx.upProps.disabled ? 0.35 : 1 }}
+                        style={{ ...styles.iconBtn, opacity: ctx.upProps.disabled ? 0.35 : 1 }}
                         aria-label={t("workPackages.moveUp", { label: wp.label })}
                         title={t("workPackages.moveUp", { label: wp.label })}
                       >
@@ -247,7 +231,7 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onReorder, onBack 
                       <button
                         type="button"
                         {...ctx.downProps}
-                        style={{ ...styles.ghostBtn, ...orderBtn, opacity: ctx.downProps.disabled ? 0.35 : 1 }}
+                        style={{ ...styles.iconBtn, opacity: ctx.downProps.disabled ? 0.35 : 1 }}
                         aria-label={t("workPackages.moveDown", { label: wp.label })}
                         title={t("workPackages.moveDown", { label: wp.label })}
                       >
@@ -281,7 +265,8 @@ function WorkPackageManager({ workPackages, onSave, onDelete, onReorder, onBack 
 }
 
 export default function AdminView() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const uiLng = useUiLanguage();
   const { lng } = useParams();
   const navigate = useNavigate();
   const {
@@ -605,24 +590,13 @@ export default function AdminView() {
     return <Navigate to={localePath(lng, "admin", "login")} replace />;
   }
 
-  const uiLng = (i18n.language || "en").slice(0, 2);
-
   return (
     <div style={styles.appWrap}>
       <nav
         style={{
           ...styles.sidebar,
           background: "#0f1923",
-          ...(narrow
-            ? {
-                position: "fixed",
-                inset: "0 auto 0 0",
-                zIndex: 40,
-                transform: navOpen ? "translateX(0)" : "translateX(-105%)",
-                transition: "transform 0.2s ease",
-                boxShadow: navOpen ? "8px 0 24px rgba(0,0,0,0.45)" : "none",
-              }
-            : null),
+          ...drawerStyle(narrow, navOpen),
         }}
         aria-label={t("admin.navLabel")}
       >
@@ -793,10 +767,11 @@ export default function AdminView() {
           />
         ) : showAddForm || editingScenario ? (
           <ScenarioForm
-            key={editingScenario ? `edit-${editingScenario.id}-${formIntent.focusSituationId || ""}-${formIntent.addSituation ? "add" : ""}` : "new"}
+            key={editingScenario ? `edit-${editingScenario.id}-${formIntent.focusSituationId || ""}-${formIntent.addSituation ? "add" : ""}-${formIntent.lang || ""}` : "new"}
             initial={editingScenario}
             focusSituationId={formIntent.focusSituationId}
             addSituation={formIntent.addSituation}
+            initialLang={formIntent.lang}
             onSave={saveScenario}
             onCancel={() => {
               setShowAddForm(false);
@@ -887,12 +862,14 @@ export default function AdminView() {
                   <span style={{ flex: 2 }}>{t("admin.colTitle")}</span>
                   <span style={{ flex: 1 }}>{t("admin.colWps")}</span>
                   <span style={{ flex: 1.4 }}>{t("admin.colSituations")}</span>
+                  <span style={{ width: 120 }}>{t("translate.languages")}</span>
                   <span style={{ width: 80 }}>{t("admin.colStatus")}</span>
                   <span style={{ flex: 1, textAlign: "right" }}>{t("admin.colActions")}</span>
                 </div>
               ) : null}
               {filteredScenarios.map((row) => {
-                const situations = editableById.get(row.id)?.situations || [];
+                const editable = editableById.get(row.id);
+                const situations = editable?.situations || [];
                 const expanded = expandedIds.has(row.id);
                 const verdictCounts = VERDICT_CODES.map((code) => ({
                   code,
@@ -963,6 +940,14 @@ export default function AdminView() {
                                 </span>
                               ))
                             )}
+                          </span>
+                          <span style={{ width: 120 }}>
+                            {editable ? (
+                              <LanguageBadges
+                                statusOf={(lng) => scenarioLangStatus(editable, lng)}
+                                onOpen={(lng) => openScenarioEditor(row, { lang: lng })}
+                              />
+                            ) : null}
                           </span>
                           <span
                             style={{

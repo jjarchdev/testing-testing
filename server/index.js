@@ -22,9 +22,6 @@ const {
   updateScenario,
   deleteScenarioById,
   listCategories,
-  insertCategory,
-  updateCategory,
-  deleteCategory,
   listWorkPackages,
   insertWorkPackage,
   updateWorkPackage,
@@ -42,9 +39,6 @@ const {
   readScenariosFromDisk,
   writeScenariosToDisk,
   readCategoriesFromDisk,
-  insertCategoryOnDisk,
-  updateCategoryOnDisk,
-  deleteCategoryOnDisk,
   readWorkPackagesFromDisk,
   insertWorkPackageOnDisk,
   updateWorkPackageOnDisk,
@@ -75,7 +69,7 @@ const {
   sanitizeConfluenceUrl,
   parseVerdict,
 } = await import("../shared/scenarioSchema.mjs");
-const { normalizeCategory, normalizeWorkPackage, sanitizeWp, sanitizeWpList } = await import("../shared/categoryMap.mjs");
+const { normalizeWorkPackage, sanitizeWp, sanitizeWpList } = await import("../shared/categoryMap.mjs");
 const {
   saveUploadedImage,
   UPLOADS_DIR,
@@ -342,18 +336,6 @@ function parseScenarioBody(body, { legacy = false } = {}) {
   return normalized;
 }
 
-function parseCategoryBody(body) {
-  const label = typeof body?.label === "string" ? body.label.trim() : "";
-  if (!label) return null;
-  const sort_order =
-    body?.sort_order != null && Number.isFinite(Number(body.sort_order))
-      ? Number(body.sort_order)
-      : undefined;
-  const slug = typeof body?.slug === "string" ? body.slug.trim() : undefined;
-  const wps = Array.isArray(body?.wps) ? sanitizeWpList(body.wps) : undefined;
-  return { label, sort_order, slug, wps };
-}
-
 function parseWorkPackageBody(body) {
   const label = typeof body?.label === "string" ? sanitizeWp(body.label) : "";
   if (!label) return null;
@@ -562,81 +544,6 @@ app.get("/api/categories", async (req, res) => {
   } catch (e) {
     console.error("[categories:list]", e?.message || e);
     res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.post("/api/categories", requireAuth, async (req, res) => {
-  if (requireSupabaseInProd(res)) return;
-  try {
-    const payload = parseCategoryBody(req.body);
-    if (!payload) {
-      return res.status(400).json({ error: "Invalid category" });
-    }
-    const category = isSupabaseConfigured()
-      ? await insertCategory(payload)
-      : await insertCategoryOnDisk(payload);
-    res.status(201).json({ category });
-  } catch (e) {
-    console.error("[categories:create]", e?.message || e);
-    res.status(400).json({ error: e.message || "Create failed" });
-  }
-});
-
-app.put("/api/categories/:slug", requireAuth, async (req, res) => {
-  if (requireSupabaseInProd(res)) return;
-  const slug = String(req.params.slug || "").trim();
-  if (!slug) {
-    return res.status(400).json({ error: "Invalid slug" });
-  }
-  try {
-    const label =
-      typeof req.body?.label === "string" && req.body.label.trim()
-        ? req.body.label.trim()
-        : undefined;
-    const sort_order =
-      req.body?.sort_order != null && Number.isFinite(Number(req.body.sort_order))
-        ? Number(req.body.sort_order)
-        : undefined;
-    const hasWps = Array.isArray(req.body?.wps);
-    if (label === undefined && sort_order === undefined && !hasWps) {
-      return res.status(400).json({ error: "Nothing to update" });
-    }
-    const payload = { label, sort_order };
-    if (hasWps) payload.wps = sanitizeWpList(req.body.wps);
-    const category = isSupabaseConfigured()
-      ? await updateCategory(slug, payload)
-      : await updateCategoryOnDisk(slug, payload);
-    if (!category) return res.status(404).json({ error: "Not found" });
-    res.json({ category: normalizeCategory(category) });
-  } catch (e) {
-    console.error("[handler] update:", e?.message || e);
-    res.status(400).json({ error: e.message || "Update failed" });
-  }
-});
-
-app.delete("/api/categories/:slug", requireAuth, async (req, res) => {
-  if (requireSupabaseInProd(res)) return;
-  const slug = String(req.params.slug || "").trim();
-  if (!slug) {
-    return res.status(400).json({ error: "Invalid slug" });
-  }
-  try {
-    const result = isSupabaseConfigured()
-      ? await deleteCategory(slug)
-      : await deleteCategoryOnDisk(slug);
-    if (result.reason === "not_found") {
-      return res.status(404).json({ error: "Not found" });
-    }
-    if (result.reason === "in_use") {
-      return res.status(409).json({
-        error: `Category is used by ${result.count} scenario(s)`,
-        count: result.count,
-      });
-    }
-    res.status(204).send();
-  } catch (e) {
-    console.error("[handler] delete:", e?.message || e);
-    res.status(400).json({ error: e.message || "Delete failed" });
   }
 });
 
@@ -1350,26 +1257,22 @@ if (distBundleOk) {
   });
 }
 
-// eslint-disable-next-line no-unused-vars
+function publicErrorMessage(err, status) {
+  if (err?.type === "entity.parse.failed") return "Invalid JSON body";
+  if (err?.type === "entity.too.large") return "Payload too large";
+  if (status >= 500) return "Server error";
+  if (err?.expose && err?.message) return err.message;
+  if (status === 403) return "Forbidden";
+  if (status === 404) return "Not found";
+  return "Request failed";
+}
+
 app.use((err, req, res, _next) => {
   const status = Number.isFinite(err?.status) ? err.status : 500;
   const isApi = req.path.startsWith("/api");
   if (status >= 500) console.error("[error]", err);
   if (isApi || req.path.startsWith("/uploads")) {
-    const safeMsg =
-      err?.type === "entity.parse.failed"
-        ? "Invalid JSON body"
-        : err?.type === "entity.too.large"
-          ? "Payload too large"
-          : status >= 500
-            ? "Server error"
-            : err?.expose && err?.message
-              ? err.message
-              : status === 403
-                ? "Forbidden"
-                : status === 404
-                  ? "Not found"
-                  : "Request failed";
+    const safeMsg = publicErrorMessage(err, status);
     return res
       .status(status)
       .type(isApi ? "application/json" : "text/plain")
@@ -1397,9 +1300,6 @@ if (isProd && adminPassword && !adminUser) {
 if (isProd && !(process.env.SUPABASE_ANON_KEY || "").trim()) {
   console.warn("[qm-playbook] SUPABASE_ANON_KEY not set; browser Supabase Auth disabled");
 }
-if (isProd && !isSupabaseConfigured()) {
-  console.error("[qm-playbook] SUPABASE_URL and SUPABASE_SECRET_KEY are required in production");
-}
 if (isSupabaseConfigured() && usingLegacySupabaseKeyEnv()) {
   console.warn(
     "[qm-playbook] SUPABASE_SERVICE_ROLE_KEY is legacy; set SUPABASE_SECRET_KEY (sb_secret_...) instead"
@@ -1414,7 +1314,7 @@ if (encryptionKeySource() === "jwt") {
 const host = isProd ? "0.0.0.0" : "127.0.0.1";
 
 if (isProd && !isSupabaseConfigured()) {
-  console.error("[qm-playbook] Refusing to start without Supabase in production");
+  console.error("[qm-playbook] SUPABASE_URL and SUPABASE_SECRET_KEY are required in production");
   process.exit(1);
 }
 

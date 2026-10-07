@@ -2,7 +2,7 @@ function apiBase() {
   return String(import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
 }
 
-export function apiUrl(path) {
+function apiUrl(path) {
   const p = path.startsWith("/") ? path : `/${path}`;
   return `${apiBase()}${p}`;
 }
@@ -47,17 +47,6 @@ export async function loginWithEnvCredentials({ username, password }) {
     throw err;
   }
   return data;
-}
-
-export async function logoutAdmin() {
-  try {
-    const mod = await import("./supabase.js");
-    const client = await mod.getSupabaseAuth();
-    if (client) await client.auth.signOut().catch(() => {});
-  } catch {
-    /* ignore */
-  }
-  await apiFetch("/api/auth/logout", { method: "POST" });
 }
 
 export async function uploadImageFile(file) {

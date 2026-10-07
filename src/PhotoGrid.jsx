@@ -2,8 +2,6 @@ function cssUrl(url) {
   return String(url).replace(/["\\]/g, (c) => (c === '"' ? "%22" : "%5C"));
 }
 
-// Shows the whole photo (never cropped) over a soft blurred copy of itself,
-// so portrait phone photos do not leave ugly black bars.
 export function PhotoFrame({ url, alt = "", aspect = "4 / 3", style, children }) {
   return (
     <span
@@ -39,7 +37,30 @@ export function PhotoFrame({ url, alt = "", aspect = "4 / 3", style, children })
   );
 }
 
-export function NumberBadge({ children }) {
+export function PhotoCountBadge({ children, inset = 8 }) {
+  return (
+    <span
+      style={{
+        position: "absolute",
+        right: inset,
+        bottom: inset,
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        background: "rgba(8, 14, 22, 0.82)",
+        color: "#e8eef5",
+        fontSize: "0.75rem",
+        fontWeight: 700,
+        padding: "0.2rem 0.45rem",
+        borderRadius: 6,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function NumberBadge({ children }) {
   return (
     <span
       style={{
@@ -65,7 +86,6 @@ export function NumberBadge({ children }) {
   );
 }
 
-// A clickable thumbnail that opens the photo viewer.
 export function PhotoTile({ url, caption, onClick, ariaLabel, aspect = "4 / 3", badge, style }) {
   return (
     <button
@@ -92,7 +112,6 @@ export function PhotoTile({ url, caption, onClick, ariaLabel, aspect = "4 / 3", 
   );
 }
 
-// images: [{ url, caption? }]. Captions show under each thumbnail.
 export default function PhotoGrid({ images, onOpen, openLabel, minWidth = 150, aspect = "4 / 3" }) {
   if (!images.length) return null;
   return (

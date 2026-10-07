@@ -7,13 +7,15 @@ import ScenarioDetail from "./ScenarioDetail.jsx";
 import { GuideGrid, GuideViewer, KbSidebarGroup } from "./Guides.jsx";
 import { guideMatchesQuery } from "./guideSearch.js";
 import { useAppData } from "./AppData.jsx";
+import { PhotoCountBadge } from "./PhotoGrid.jsx";
+import { ChecklistIcon, LinkIcon } from "./icons.jsx";
 import { VERDICT_ORDER, VerdictBadge, truncateAtWord, verdictBadgeStyle } from "./scenarioUi.jsx";
 import { pickScenarioView, scenarioWpList } from "../shared/scenarioSchema.mjs";
 import { pickGuideView } from "../shared/guideSchema.mjs";
-import { accentForLabel, localePath, normalizeSearchText } from "./utils.js";
+import { accentForLabel, localePath, normalizeSearchText, pressableProps } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
-import { pushRecentId, readRecentIds, readFavoriteIds, toggleFavoriteId } from "./recent.js";
-import { styles } from "./styles.js";
+import { pushRecentId, readRecentIds, readFavoriteIds, toggleFavoriteId } from "./localState.js";
+import { drawerStyle, styles } from "./styles.js";
 
 function scenarioMatchesQuery(scenario, rawQuery, extraParts = []) {
   const q = normalizeSearchText(rawQuery);
@@ -50,6 +52,47 @@ function viewImageUrls(view) {
   return urls;
 }
 
+function wpOptionsFrom(labelLists, workPackages) {
+  const counts = new Map();
+  for (const labels of labelLists) {
+    for (const w of labels) counts.set(w, (counts.get(w) || 0) + 1);
+  }
+  const ordered = (workPackages || []).map((w) => w.label).filter((l) => counts.has(l));
+  for (const l of counts.keys()) if (!ordered.includes(l)) ordered.push(l);
+  return ordered.map((label) => ({ label, count: counts.get(label) }));
+}
+
+function pickByIds(scenarios, ids) {
+  const byId = new Map(scenarios.map((s) => [s.id, s]));
+  return ids.map((id) => byId.get(id)).filter(Boolean);
+}
+
+function SidebarScenarioList({ label, items, expanded, onToggle, activeId, onOpen, titleOf, prefix = "" }) {
+  return (
+    <div style={styles.sidebarGroup}>
+      <button type="button" onClick={onToggle} aria-expanded={expanded} style={styles.sidebarGroupToggle}>
+        <span>{label}</span>
+        <span aria-hidden="true">{expanded ? "▲" : "▼"}</span>
+      </button>
+      {expanded
+        ? items.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              style={{ ...styles.catBtn, ...(activeId === s.id ? styles.catBtnActive : {}) }}
+              onClick={() => onOpen(s)}
+            >
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
+                {prefix}
+                {titleOf(s)}
+              </span>
+            </button>
+          ))
+        : null}
+    </div>
+  );
+}
+
 function ScenarioCard({ scenario, view, onSelect, openLabel, isFavorite, onToggleFavorite }) {
   const { t } = useTranslation();
   const wps = scenarioWpList(scenario);
@@ -61,18 +104,7 @@ function ScenarioCard({ scenario, view, onSelect, openLabel, isFavorite, onToggl
   const hasChecklist = view.situations.some((s) => s.solution_as_checklist || s.acceptance_as_checklist);
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      style={styles.card}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
-    >
+    <div {...pressableProps(onSelect)} style={styles.card}>
       <div style={{ ...styles.cardAccent, background: color }} />
       {onToggleFavorite ? (
         <button
@@ -117,23 +149,7 @@ function ScenarioCard({ scenario, view, onSelect, openLabel, isFavorite, onToggl
               display: "block",
             }}
           />
-          {images.length > 1 ? (
-            <span
-              style={{
-                position: "absolute",
-                right: 10,
-                bottom: 10,
-                background: "rgba(8, 14, 22, 0.82)",
-                color: "#e8eef5",
-                fontSize: "0.75rem",
-                fontWeight: 700,
-                padding: "0.2rem 0.45rem",
-                borderRadius: 6,
-              }}
-            >
-              +{images.length - 1}
-            </span>
-          ) : null}
+          {images.length > 1 ? <PhotoCountBadge inset={10}>+{images.length - 1}</PhotoCountBadge> : null}
         </div>
       ) : null}
       <div style={styles.cardCat}>{wps.join(" · ")}</div>
@@ -148,12 +164,12 @@ function ScenarioCard({ scenario, view, onSelect, openLabel, isFavorite, onToggl
         ) : null}
         {hasChecklist ? (
           <span title={t("employee.hasChecklist")} aria-label={t("employee.hasChecklist")} style={styles.cardMiniBadge}>
-            ☑
+            <ChecklistIcon />
           </span>
         ) : null}
         {scenario.confluence_page_id ? (
           <span title={t("employee.hasConfluence")} aria-label={t("employee.hasConfluence")} style={styles.cardMiniBadge}>
-            🔗
+            <LinkIcon />
           </span>
         ) : null}
       </div>
@@ -211,15 +227,10 @@ export default function EmployeeView({ section = "scenarios" }) {
     [scenarioList, activeLng]
   );
 
-  const wpOptions = useMemo(() => {
-    const counts = new Map();
-    for (const s of classifiedList) {
-      for (const w of scenarioWpList(s)) counts.set(w, (counts.get(w) || 0) + 1);
-    }
-    const ordered = (workPackages || []).map((w) => w.label).filter((l) => counts.has(l));
-    for (const l of counts.keys()) if (!ordered.includes(l)) ordered.push(l);
-    return ordered.map((label) => ({ label, count: counts.get(label) }));
-  }, [classifiedList, workPackages]);
+  const wpOptions = useMemo(
+    () => wpOptionsFrom(classifiedList.map((s) => scenarioWpList(s)), workPackages),
+    [classifiedList, workPackages]
+  );
 
   const publishedGuides = useMemo(
     () =>
@@ -230,15 +241,10 @@ export default function EmployeeView({ section = "scenarios" }) {
     [guides, activeLng]
   );
 
-  const guideWpOptions = useMemo(() => {
-    const counts = new Map();
-    for (const { guide } of publishedGuides) {
-      for (const w of guide.wps || []) counts.set(w, (counts.get(w) || 0) + 1);
-    }
-    const ordered = (workPackages || []).map((w) => w.label).filter((l) => counts.has(l));
-    for (const l of counts.keys()) if (!ordered.includes(l)) ordered.push(l);
-    return ordered.map((label) => ({ label, count: counts.get(label) }));
-  }, [publishedGuides, workPackages]);
+  const guideWpOptions = useMemo(
+    () => wpOptionsFrom(publishedGuides.map(({ guide }) => guide.wps || []), workPackages),
+    [publishedGuides, workPackages]
+  );
 
   const filteredGuides = useMemo(
     () =>
@@ -287,15 +293,8 @@ export default function EmployeeView({ section = "scenarios" }) {
     });
   }, [inWp, searchQuery, filterVerdict, searching, t, activeLng]);
 
-  const recentScenarios = useMemo(() => {
-    const byId = new Map(classifiedList.map((s) => [s.id, s]));
-    return recentIds.map((id) => byId.get(id)).filter(Boolean);
-  }, [classifiedList, recentIds]);
-
-  const favoriteScenarios = useMemo(() => {
-    const byId = new Map(classifiedList.map((s) => [s.id, s]));
-    return favoriteIds.map((id) => byId.get(id)).filter(Boolean);
-  }, [classifiedList, favoriteIds]);
+  const recentScenarios = useMemo(() => pickByIds(classifiedList, recentIds), [classifiedList, recentIds]);
+  const favoriteScenarios = useMemo(() => pickByIds(classifiedList, favoriteIds), [classifiedList, favoriteIds]);
 
   const openScenario = (scenario) => {
     if (!scenario) return;
@@ -329,6 +328,7 @@ export default function EmployeeView({ section = "scenarios" }) {
   const backToScenarios = () => {
     setSearchQuery("");
     navigate(scenariosListPath);
+    setNavOpen(false);
   };
 
   useEffect(() => {
@@ -473,12 +473,18 @@ export default function EmployeeView({ section = "scenarios" }) {
           guide={selectedGuideItem.guide}
           view={selectedGuideItem.view}
           onBack={() => navigate(guidesListPath)}
+          onBackToScenarios={backToScenarios}
         />
       );
     }
     return (
       <>
-        <button type="button" className="no-print" style={{ ...styles.detailBack, paddingBottom: "1rem" }} onClick={backToScenarios}>
+        <button
+          type="button"
+          className="no-print"
+          style={{ ...styles.ghostBtn, padding: "0.45rem 0.9rem", fontSize: "0.88rem", marginBottom: "1rem" }}
+          onClick={backToScenarios}
+        >
           {t("kb.backToScenarios")}
         </button>
         <div style={styles.mainHeader}>
@@ -594,16 +600,7 @@ export default function EmployeeView({ section = "scenarios" }) {
           height: "100%",
           overflowX: "hidden",
           overflowY: "auto",
-          ...(narrow
-            ? {
-                position: "fixed",
-                inset: "0 auto 0 0",
-                zIndex: 40,
-                transform: navOpen ? "translateX(0)" : "translateX(-105%)",
-                transition: "transform 0.2s ease",
-                boxShadow: navOpen ? "8px 0 24px rgba(0,0,0,0.45)" : "none",
-              }
-            : null),
+          ...drawerStyle(narrow, navOpen),
         }}
         aria-label={t("employee.navLabel")}
       >
@@ -686,79 +683,28 @@ export default function EmployeeView({ section = "scenarios" }) {
         </div>
 
         {favoriteScenarios.length > 0 ? (
-          <div style={styles.sidebarGroup}>
-            <button
-              type="button"
-              onClick={() => setFavoritesExpanded((v) => !v)}
-              aria-expanded={favoritesExpanded}
-              style={styles.sidebarGroupToggle}
-            >
-              <span>{t("employee.favorites", { count: favoriteScenarios.length })}</span>
-              <span aria-hidden="true">{favoritesExpanded ? "▲" : "▼"}</span>
-            </button>
-            {favoritesExpanded
-              ? favoriteScenarios.map((s) => (
-                  <button
-                    key={`favorite-${s.id}`}
-                    type="button"
-                    style={{
-                      ...styles.catBtn,
-                      ...(selectedScenario?.id === s.id ? styles.catBtnActive : {}),
-                    }}
-                    onClick={() => openScenario(s)}
-                  >
-                    <span
-                      style={{
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        maxWidth: "100%",
-                      }}
-                    >
-                      ★ {viewFor(s).title}
-                    </span>
-                  </button>
-                ))
-              : null}
-          </div>
+          <SidebarScenarioList
+            label={t("employee.favorites", { count: favoriteScenarios.length })}
+            items={favoriteScenarios}
+            expanded={favoritesExpanded}
+            onToggle={() => setFavoritesExpanded((v) => !v)}
+            activeId={selectedScenario?.id}
+            onOpen={openScenario}
+            titleOf={(s) => viewFor(s).title}
+            prefix="★ "
+          />
         ) : null}
 
         {recentScenarios.length > 0 ? (
-          <div style={styles.sidebarGroup}>
-            <button
-              type="button"
-              onClick={() => setRecentExpanded((v) => !v)}
-              aria-expanded={recentExpanded}
-              style={styles.sidebarGroupToggle}
-            >
-              <span>{t("employee.recent", { count: recentScenarios.length })}</span>
-              <span aria-hidden="true">{recentExpanded ? "▲" : "▼"}</span>
-            </button>
-            {recentExpanded
-              ? recentScenarios.map((s) => (
-                  <button
-                    key={`recent-${s.id}`}
-                    type="button"
-                    style={{
-                      ...styles.catBtn,
-                      ...(selectedScenario?.id === s.id ? styles.catBtnActive : {}),
-                    }}
-                    onClick={() => openScenario(s)}
-                  >
-                    <span
-                      style={{
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        maxWidth: "100%",
-                      }}
-                    >
-                      {viewFor(s).title}
-                    </span>
-                  </button>
-                ))
-              : null}
-          </div>
+          <SidebarScenarioList
+            label={t("employee.recent", { count: recentScenarios.length })}
+            items={recentScenarios}
+            expanded={recentExpanded}
+            onToggle={() => setRecentExpanded((v) => !v)}
+            activeId={selectedScenario?.id}
+            onOpen={openScenario}
+            titleOf={(s) => viewFor(s).title}
+          />
         ) : null}
 
         <KbSidebarGroup
@@ -767,6 +713,8 @@ export default function EmployeeView({ section = "scenarios" }) {
           listActive={inGuides && !guideId}
           onOpenList={openGuidesList}
           onOpenGuide={openGuide}
+          inKb={inGuides}
+          onBackToScenarios={backToScenarios}
         />
 
         <button

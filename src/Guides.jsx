@@ -4,11 +4,11 @@ import ImageLightbox from "./ImageLightbox.jsx";
 import { PhotoFrame, PhotoTile } from "./PhotoGrid.jsx";
 import { BookIcon, ImageIcon } from "./icons.jsx";
 import { ParagraphText } from "./richText.jsx";
-import { accentForLabel } from "./utils.js";
+import { LANG_LABELS } from "./translation.jsx";
+import { accentForLabel, pressableProps } from "./utils.js";
 import { useIsNarrow } from "./useIsNarrow.js";
 import { styles } from "./styles.js";
 
-const LANG_NAMES = { en: "English", de: "Deutsch", sq: "Shqip" };
 const SIDEBAR_GUIDES = 6;
 
 const clamp = (lines) => ({
@@ -18,12 +18,31 @@ const clamp = (lines) => ({
   overflow: "hidden",
 });
 
-export function KbSidebarGroup({ items, activeId, listActive, onOpenList, onOpenGuide }) {
+export function KbSidebarGroup({ items, activeId, listActive, onOpenList, onOpenGuide, inKb, onBackToScenarios }) {
   const { t } = useTranslation();
   const shown = items.slice(0, SIDEBAR_GUIDES);
   return (
     <div style={styles.sidebarGroup}>
       <div style={styles.sidebarGroupLabel}>{t("kb.navLabel")}</div>
+      {inKb ? (
+        <button
+          type="button"
+          onClick={onBackToScenarios}
+          style={{
+            ...styles.ghostBtn,
+            width: "100%",
+            justifyContent: "center",
+            padding: "0.6rem 0.75rem",
+            fontSize: "0.9rem",
+            marginBottom: "0.6rem",
+            border: "1px solid #4fa3ff",
+            background: "rgba(79, 163, 255, 0.08)",
+            color: "#4fa3ff",
+          }}
+        >
+          {t("kb.backToScenarios")}
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={onOpenList}
@@ -98,18 +117,7 @@ function GuideCard({ guide, view, onOpen, compact = false }) {
   const wps = guide.wps || [];
   const accent = accentForLabel(wps[0] || "");
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      style={{ ...styles.card, padding: 0, display: "flex", flexDirection: "column" }}
-    >
+    <div {...pressableProps(onOpen)} style={{ ...styles.card, padding: 0, display: "flex", flexDirection: "column" }}>
       <div style={{ ...styles.cardAccent, background: accent, zIndex: 1 }} />
       {cover ? (
         <PhotoFrame url={cover} aspect="4 / 3" />
@@ -185,9 +193,7 @@ export function GuideGrid({ items, onOpen }) {
   );
 }
 
-const smallBtn = { ...styles.ghostBtn, padding: "0.4rem 0.75rem" };
-
-export function GuideViewer({ guide, view, onBack }) {
+export function GuideViewer({ guide, view, onBack, onBackToScenarios }) {
   const { t } = useTranslation();
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const total = view.steps.length;
@@ -213,16 +219,23 @@ export function GuideViewer({ guide, view, onBack }) {
         className="no-print"
         style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginBottom: "1rem", justifyContent: "space-between", alignItems: "center" }}
       >
-        <button type="button" style={styles.detailBack} onClick={onBack}>
-          {t("kb.backToGuides")}
-        </button>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+          <button type="button" style={styles.smallBtn} onClick={onBack}>
+            {t("kb.backToGuides")}
+          </button>
+          {onBackToScenarios ? (
+            <button type="button" style={styles.smallBtn} onClick={onBackToScenarios}>
+              {t("kb.backToScenarios")}
+            </button>
+          ) : null}
+        </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
           {lightboxImages.length > 0 ? (
-            <button type="button" style={smallBtn} onClick={() => setLightboxIndex(0)}>
+            <button type="button" style={styles.smallBtn} onClick={() => setLightboxIndex(0)}>
               {t("kb.startSteps")}
             </button>
           ) : null}
-          <button type="button" style={smallBtn} onClick={() => window.print()}>
+          <button type="button" style={styles.smallBtn} onClick={() => window.print()}>
             {t("employee.print")}
           </button>
         </div>
@@ -242,7 +255,7 @@ export function GuideViewer({ guide, view, onBack }) {
         </span>
         {view.fallback ? (
           <span style={{ ...styles.tag, background: "rgba(230, 126, 34, 0.14)", color: "#e67e22" }}>
-            {t("kb.shownIn", { lang: LANG_NAMES[view.language] || view.language })}
+            {t("kb.shownIn", { lang: LANG_LABELS[view.language] || view.language })}
           </span>
         ) : null}
         {view.tags.map((tag, i) => (
@@ -299,15 +312,6 @@ export function GuideViewer({ guide, view, onBack }) {
           onIndexChange={setLightboxIndex}
           onClose={() => setLightboxIndex(null)}
           richCaption
-          labels={{
-            dialog: t("employee.imageLightbox"),
-            close: t("employee.closeImage"),
-            prev: t("employee.prevImage"),
-            next: t("employee.nextImage"),
-            zoomIn: t("employee.zoomIn"),
-            zoomOut: t("employee.zoomOut"),
-            zoomReset: t("employee.zoomReset"),
-          }}
         />
       ) : null}
     </article>

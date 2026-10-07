@@ -22,6 +22,16 @@ export async function getSupabaseAuth() {
   return clientPromise;
 }
 
+export async function logoutAdmin() {
+  try {
+    const client = await getSupabaseAuth();
+    if (client) await client.auth.signOut().catch(() => {});
+  } catch {
+    /* ignore */
+  }
+  await apiFetch("/api/auth/logout", { method: "POST" });
+}
+
 export async function exchangeForAppSession(accessToken) {
   const res = await apiFetch("/api/auth/session", {
     method: "POST",

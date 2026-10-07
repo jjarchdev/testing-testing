@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-export function moveInArray(list, from, to) {
+function moveInArray(list, from, to) {
   if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return list;
   const next = list.slice();
   const [item] = next.splice(from, 1);
@@ -18,10 +18,6 @@ function scrollParentOf(el) {
   return document.scrollingElement || document.documentElement;
 }
 
-// A vertical list that can be reordered by dragging a handle (mouse or touch) or with the up/down buttons.
-// renderItem(item, { index, count, isDragging, handleProps, handleStyle, upProps, downProps })
-// The consumer renders a button with {...handleProps} style={handleStyle} for dragging, and optional
-// up/down buttons with {...upProps} / {...downProps}. onReorder(newItems) is called once per change.
 export default function SortableList({ items, getKey, onReorder, renderItem, disabled = false, gap = 0, style }) {
   const [drag, setDrag] = useState(null);
   const dragRef = useRef(null);

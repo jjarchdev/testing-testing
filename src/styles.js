@@ -53,45 +53,6 @@ export const styles = {
     fontSize: "0.9rem",
     padding: "1rem 0",
   },
-  confluenceStatusBox: {
-    marginTop: "1rem",
-    marginBottom: "1rem",
-    padding: "0.85rem 1rem",
-    background: "#0d1520",
-    border: "1px solid #1a2a3a",
-    borderRadius: 10,
-  },
-  confluencePicked: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: "1rem",
-    padding: "0.75rem 1rem",
-    background: "#0d1520",
-    border: "1px solid #1a2a3a",
-    borderRadius: 10,
-  },
-  confluenceResults: {
-    marginTop: "0.5rem",
-    maxHeight: 260,
-    overflow: "auto",
-    border: "1px solid #1a2a3a",
-    borderRadius: 8,
-    background: "#0d1520",
-  },
-  confluenceResult: {
-    width: "100%",
-    textAlign: "left",
-    display: "block",
-    padding: "0.6rem 0.85rem",
-    background: "transparent",
-    border: "none",
-    borderBottom: "1px solid #1a2a3a",
-    color: "#eaf0fb",
-    cursor: "pointer",
-    fontFamily: "inherit",
-    fontSize: "0.9rem",
-  },
   tabRow: {
     display: "flex",
     gap: 4,
@@ -383,14 +344,6 @@ export const styles = {
     outline: "none",
     fontFamily: "inherit",
   },
-  catList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 2,
-    padding: "0 0.5rem",
-    overflowY: "auto",
-    flex: 1,
-  },
   catBtn: {
     background: "transparent",
     border: "none",
@@ -409,10 +362,6 @@ export const styles = {
     background: "rgba(79, 163, 255, 0.12)",
     color: "#eaf0fb",
     fontWeight: 600,
-  },
-  catCount: {
-    color: "#8899aa",
-    fontSize: "0.75rem",
   },
   main: {
     flex: 1,
@@ -497,6 +446,8 @@ export const styles = {
     color: "#eaf0fb",
   },
   cardMiniBadge: {
+    display: "inline-flex",
+    alignItems: "center",
     fontSize: "0.8rem",
     color: "#8899aa",
     lineHeight: 1,
@@ -616,18 +567,6 @@ export const styles = {
     border: "1px solid #1a2a3a",
     borderRadius: 12,
     overflow: "hidden",
-  },
-  situationHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "1rem",
-    width: "100%",
-    background: "transparent",
-    border: "none",
-    cursor: "pointer",
-    padding: "0.85rem 1rem",
-    fontFamily: "inherit",
   },
   detailTags: { display: "flex", gap: "0.5rem", flexWrap: "wrap" },
   tagLarge: {
@@ -817,5 +756,43 @@ export const styles = {
     fontSize: "0.9rem",
     marginBottom: "0.5rem",
   },
+};
+
+export function drawerStyle(narrow, open) {
+  if (!narrow) return null;
+  return {
+    position: "fixed",
+    inset: "0 auto 0 0",
+    zIndex: 40,
+    transform: open ? "translateX(0)" : "translateX(-105%)",
+    transition: "transform 0.2s ease",
+    boxShadow: open ? "8px 0 24px rgba(0,0,0,0.45)" : "none",
+  };
+}
+
+styles.smallBtn = { ...styles.ghostBtn, padding: "0.4rem 0.75rem" };
+
+styles.iconBtn = {
+  ...styles.ghostBtn,
+  width: 34,
+  height: 34,
+  padding: 0,
+  justifyContent: "center",
+  borderRadius: 8,
+  fontSize: "0.95rem",
+  lineHeight: 1,
+  flexShrink: 0,
+};
+
+styles.visuallyHidden = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: "hidden",
+  clip: "rect(0, 0, 0, 0)",
+  whiteSpace: "nowrap",
+  border: 0,
 };
 

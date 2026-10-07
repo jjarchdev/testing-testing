@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ConfluenceView from "./ConfluenceView.jsx";
 import ImageLightbox from "./ImageLightbox.jsx";
-import PhotoGrid, { PhotoFrame } from "./PhotoGrid.jsx";
-import { ImageIcon } from "./icons.jsx";
+import PhotoGrid, { PhotoCountBadge, PhotoFrame } from "./PhotoGrid.jsx";
+import { ChecklistIcon, ImageIcon } from "./icons.jsx";
 import { ParagraphText } from "./richText.jsx";
 import {
   SolutionBlockList,
@@ -18,22 +18,9 @@ import {
 } from "./scenarioUi.jsx";
 import { scenarioWpList } from "../shared/scenarioSchema.mjs";
 import { useIsNarrow } from "./useIsNarrow.js";
-import { readCheckedSteps, readWideLayout, writeCheckedSteps, writeWideLayout } from "./recent.js";
+import { pressableProps } from "./utils.js";
+import { readCheckedSteps, readWideLayout, writeCheckedSteps, writeWideLayout } from "./localState.js";
 import { styles } from "./styles.js";
-
-const smallBtn = { ...styles.ghostBtn, padding: "0.4rem 0.75rem" };
-
-function lightboxLabels(t) {
-  return {
-    dialog: t("employee.imageLightbox"),
-    close: t("employee.closeImage"),
-    prev: t("employee.prevImage"),
-    next: t("employee.nextImage"),
-    zoomIn: t("employee.zoomIn"),
-    zoomOut: t("employee.zoomOut"),
-    zoomReset: t("employee.zoomReset"),
-  };
-}
 
 function toPhotos(urls, captions) {
   return (urls || []).map((url) => ({ url, caption: (captions && captions[url]) || "" }));
@@ -52,40 +39,14 @@ function SituationCard({ situation, number, onOpen }) {
   const snippet = truncateAtWord(situation.scenario.replace(/\s+/g, " ").trim(), 140);
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      style={{ ...styles.card, padding: 0, display: "flex", flexDirection: "column" }}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-    >
+    <div {...pressableProps(onOpen)} style={{ ...styles.card, padding: 0, display: "flex", flexDirection: "column" }}>
       <div style={{ ...styles.cardAccent, background: color, zIndex: 1 }} />
       {cover ? (
         <PhotoFrame url={cover} aspect="16 / 10">
           {photoCount > 1 ? (
-            <span
-              style={{
-                position: "absolute",
-                right: 8,
-                bottom: 8,
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                background: "rgba(8, 14, 22, 0.82)",
-                color: "#e8eef5",
-                fontSize: "0.75rem",
-                fontWeight: 700,
-                padding: "0.2rem 0.45rem",
-                borderRadius: 6,
-              }}
-            >
+            <PhotoCountBadge>
               <ImageIcon /> {photoCount}
-            </span>
+            </PhotoCountBadge>
           ) : null}
         </PhotoFrame>
       ) : null}
@@ -110,7 +71,11 @@ function SituationCard({ situation, number, onOpen }) {
           }}
         >
           <span style={{ display: "flex", alignItems: "center", gap: "0.75rem", color: "#8899aa", fontSize: "0.78rem" }}>
-            {stepCount ? <span>☑ {t("employee.stepsCount", { count: stepCount })}</span> : null}
+            {stepCount ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <ChecklistIcon /> {t("employee.stepsCount", { count: stepCount })}
+              </span>
+            ) : null}
             {photoCount ? (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                 <ImageIcon /> {t("employee.photosCount", { count: photoCount })}
@@ -274,7 +239,6 @@ function SituationBody({ scenario, situation, title, narrow, onNotify }) {
           index={lightbox.index}
           onIndexChange={(index) => setLightbox({ ...lightbox, index })}
           onClose={() => setLightbox(null)}
-          labels={lightboxLabels(t)}
         />
       ) : null}
     </>
@@ -290,7 +254,7 @@ function SituationNav({ situations, activeIndex, onSelect }) {
       className="no-print"
       style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem", marginBottom: "1.1rem" }}
     >
-      <button type="button" style={{ ...smallBtn, fontSize: "0.85rem" }} onClick={() => onSelect(null)}>
+      <button type="button" style={{ ...styles.smallBtn, fontSize: "0.85rem" }} onClick={() => onSelect(null)}>
         {t("employee.allSituations")}
       </button>
       <div role="group" aria-label={t("employee.situationSwitcher")} style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -330,7 +294,7 @@ function SituationNav({ situations, activeIndex, onSelect }) {
           title={t("employee.prevSituation")}
           disabled={!prev}
           onClick={() => prev && onSelect(prev.id)}
-          style={{ ...smallBtn, padding: "0.35rem 0.75rem", opacity: prev ? 1 : 0.4 }}
+          style={{ ...styles.smallBtn, padding: "0.35rem 0.75rem", opacity: prev ? 1 : 0.4 }}
         >
           ‹
         </button>
@@ -343,7 +307,7 @@ function SituationNav({ situations, activeIndex, onSelect }) {
           title={t("employee.nextSituation")}
           disabled={!next}
           onClick={() => next && onSelect(next.id)}
-          style={{ ...smallBtn, padding: "0.35rem 0.75rem", opacity: next ? 1 : 0.4 }}
+          style={{ ...styles.smallBtn, padding: "0.35rem 0.75rem", opacity: next ? 1 : 0.4 }}
         >
           ›
         </button>
@@ -362,8 +326,6 @@ function GroupHeader({ code, count, t }) {
   );
 }
 
-// situationId + onSelectSituation make the open situation controlled (kept in the page address).
-// Without them the component keeps track of the open situation itself (used by the admin preview).
 export function ScenarioDetail({
   scenario,
   view,
@@ -436,7 +398,7 @@ export function ScenarioDetail({
       .filter((x) => x.situation.verdict === code),
   })).filter((g) => g.items.length);
 
-  const body = (situation, index) => (
+  const body = (situation) => (
     <SituationBody
       key={situation.id}
       scenario={scenario}
@@ -454,7 +416,7 @@ export function ScenarioDetail({
         <div style={{ margin: "0 0 0.75rem" }}>
           <VerdictBadge code={situations[0].verdict} t={t} />
         </div>
-        {body(situations[0], 0)}
+        {body(situations[0])}
       </>
     );
   } else if (printing) {
@@ -466,7 +428,7 @@ export function ScenarioDetail({
             <div style={{ color: "#5c7186", fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "0.5rem" }}>
               {t("employee.situationN", { n: index + 1 })}
             </div>
-            {body(situation, index)}
+            {body(situation)}
           </div>
         ))}
       </div>
@@ -481,7 +443,7 @@ export function ScenarioDetail({
             {t("employee.situationN", { n: activeIndex + 1 })}
           </span>
         </div>
-        {body(active, activeIndex)}
+        {body(active)}
       </>
     );
   } else {
@@ -536,12 +498,12 @@ export function ScenarioDetail({
               aria-label={wideLayout ? t("employee.comfortableWidth") : t("employee.fullWidth")}
               title={wideLayout ? t("employee.comfortableWidth") : t("employee.fullWidth")}
               onClick={toggleWideLayout}
-              style={smallBtn}
+              style={styles.smallBtn}
             >
               {wideLayout ? "⤡" : "⤢"} {wideLayout ? t("employee.comfortableWidth") : t("employee.fullWidth")}
             </button>
           ) : null}
-          <button type="button" style={smallBtn} onClick={() => setPrinting(true)}>
+          <button type="button" style={styles.smallBtn} onClick={() => setPrinting(true)}>
             {t("employee.print")}
           </button>
           {onToggleFavorite ? (
@@ -551,7 +513,7 @@ export function ScenarioDetail({
               title={isFavorite ? t("employee.unfavorite") : t("employee.favorite")}
               onClick={onToggleFavorite}
               style={{
-                ...smallBtn,
+                ...styles.smallBtn,
                 ...(isFavorite ? { color: "#f5c518", border: "1px solid #f5c518" } : {}),
               }}
             >

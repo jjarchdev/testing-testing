@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { useBlocker } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { uploadImageFile } from "./api.js";
 import { useAppData } from "./AppData.jsx";
 import { ScenarioDetail } from "./ScenarioDetail.jsx";
 import { useIsNarrow } from "./useIsNarrow.js";
+import { useUnsavedGuard } from "./useUnsavedGuard.js";
+import { splitTags } from "./utils.js";
 import Dropdown from "./Dropdown.jsx";
+import PreviewDialog from "./PreviewDialog.jsx";
+import {
+  LANG_LABELS,
+  LanguageTabs,
+  SourceHint,
+  TranslateFrom,
+  useEditorLanguages,
+} from "./translation.jsx";
 import { styles } from "./styles.js";
 import {
   MAX_SCENARIO_IMAGES,
@@ -15,8 +24,9 @@ import {
   scenarioToEditable,
 } from "../shared/scenarioSchema.mjs";
 
-const LANG_LABELS = { en: "English", de: "Deutsch", sq: "Shqip" };
-const BLANK_TEXT = { scenario: "", solution: "", acceptance: "" };
+function blankText() {
+  return { scenario: "", solution: "", acceptance: "", image_captions: {}, acceptance_image_captions: {} };
+}
 
 function newSituationId() {
   return `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -26,7 +36,7 @@ function blankSituation() {
   return {
     id: newSituationId(),
     verdict: "",
-    texts: Object.fromEntries(SUPPORTED_SCENARIO_LOCALES.map((lng) => [lng, { ...BLANK_TEXT }])),
+    texts: Object.fromEntries(SUPPORTED_SCENARIO_LOCALES.map((lng) => [lng, blankText()])),
     image_urls: [],
     image_captions: {},
     acceptance_image_urls: [],
@@ -49,7 +59,22 @@ function buildForm(initial) {
     id: s.id,
     verdict: s.verdict || "",
     texts: Object.fromEntries(
-      SUPPORTED_SCENARIO_LOCALES.map((lng) => [lng, { ...BLANK_TEXT, ...(s.translations?.[lng] || {}) }])
+      SUPPORTED_SCENARIO_LOCALES.map((lng) => {
+        const slot = s.translations?.[lng] || {};
+        return [
+          lng,
+          {
+            ...blankText(),
+            ...slot,
+            // captions saved before they became per-language apply to every language until edited
+            image_captions: { ...(s.image_captions || {}), ...(slot.image_captions || {}) },
+            acceptance_image_captions: {
+              ...(s.acceptance_image_captions || {}),
+              ...(slot.acceptance_image_captions || {}),
+            },
+          },
+        ];
+      })
     ),
     image_urls: s.image_urls || [],
     image_captions: s.image_captions || {},
@@ -77,13 +102,6 @@ function hasAnyText(texts) {
   return Boolean(texts && (texts.scenario.trim() || texts.solution.trim() || texts.acceptance.trim()));
 }
 
-function splitTags(value) {
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 function languageHasContent(form, lng) {
   return (
     Boolean(form.translations[lng].title.trim() || form.translations[lng].tags.trim()) ||
@@ -106,7 +124,7 @@ function languageHasCompleteSituation(form, lng) {
   );
 }
 
-function formToPayload(form, enabledLangs, primaryLanguage, replacesLegacyId) {
+function formToPayload(form, enabledLangs, primaryLanguage, replacesLegacyId, sharedCaptions) {
   const translations = {};
   for (const lng of enabledLangs) {
     const title = form.translations[lng].title.trim();
@@ -123,9 +141,10 @@ function formToPayload(form, enabledLangs, primaryLanguage, replacesLegacyId) {
       verdict: s.verdict,
       translations: situationTranslations,
       image_urls: s.image_urls,
-      image_captions: s.image_captions,
+      // older single-situation entries can only store one caption per photo; everything else keeps them per language
+      image_captions: sharedCaptions ? s.image_captions : {},
       acceptance_image_urls: s.acceptance_image_urls,
-      acceptance_image_captions: s.acceptance_image_captions,
+      acceptance_image_captions: sharedCaptions ? s.acceptance_image_captions : {},
       solution_as_checklist: s.solution_as_checklist,
       acceptance_as_checklist: s.acceptance_as_checklist,
     };
@@ -187,6 +206,9 @@ function SituationImages({
   label,
   hint,
   withCover = true,
+  captions,
+  onCaption,
+  captionPlaceholder,
 }) {
   const { t } = useTranslation();
   const [urlDraft, setUrlDraft] = useState("");
@@ -198,7 +220,6 @@ function SituationImages({
   imageUrlsRef.current = situation[urlsKey];
   const fileInputId = useId();
   const urls = situation[urlsKey];
-  const captions = situation[captionsKey];
   const atImageCap = urls.length >= MAX_SCENARIO_IMAGES;
   const locked = disabled || uploading;
 
@@ -223,18 +244,20 @@ function SituationImages({
     setConfirmRemoveIndex(null);
     onUpdate((s) => {
       const removedUrl = s[urlsKey][index];
-      const nextCaptions = { ...s[captionsKey] };
-      delete nextCaptions[removedUrl];
+      const without = (map) => {
+        const next = { ...map };
+        delete next[removedUrl];
+        return next;
+      };
       return {
         ...s,
         [urlsKey]: s[urlsKey].filter((_, i) => i !== index),
-        [captionsKey]: nextCaptions,
+        [captionsKey]: without(s[captionsKey]),
+        texts: Object.fromEntries(
+          Object.entries(s.texts).map(([lng, tx]) => [lng, { ...tx, [captionsKey]: without(tx[captionsKey]) }])
+        ),
       };
     });
-  };
-
-  const patchCaption = (url, caption) => {
-    onUpdate((s) => ({ ...s, [captionsKey]: { ...s[captionsKey], [url]: caption } }));
   };
 
   const moveImage = (index, delta) => {
@@ -380,17 +403,7 @@ function SituationImages({
               e.target.value = "";
               await handleUploadFiles(files);
             }}
-            style={{
-              position: "absolute",
-              width: 1,
-              height: 1,
-              padding: 0,
-              margin: -1,
-              overflow: "hidden",
-              clip: "rect(0, 0, 0, 0)",
-              whiteSpace: "nowrap",
-              border: 0,
-            }}
+            style={styles.visuallyHidden}
           />
           <label
             htmlFor={fileInputId}
@@ -476,11 +489,11 @@ function SituationImages({
                     fontFamily: "inherit",
                     outline: "none",
                   }}
-                  placeholder={t("scenarioForm.captionPlaceholder")}
+                  placeholder={captionPlaceholder ? captionPlaceholder(url) : t("scenarioForm.captionPlaceholder")}
                   value={captions[url] || ""}
                   maxLength={200}
                   disabled={locked}
-                  onChange={(e) => patchCaption(url, e.target.value)}
+                  onChange={(e) => onCaption(url, e.target.value)}
                 />
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 0 }}>
                   <button
@@ -578,9 +591,11 @@ function SituationEditor({
   narrow,
   setFormError,
   sectionRef,
+  refLang,
 }) {
   const { t } = useTranslation();
   const texts = situation.texts[activeLang];
+  const refTexts = refLang ? situation.texts[refLang] : null;
   const refs = {
     scenario: useRef(null),
     solution: useRef(null),
@@ -626,6 +641,34 @@ function SituationEditor({
       el.setSelectionRange(pos, pos);
     });
   };
+
+  const captionsFor = (key) => (fixed ? situation[key] : texts[key]);
+  const onCaptionFor = (key) => (url, value) =>
+    onUpdate((s) =>
+      fixed
+        ? { ...s, [key]: { ...s[key], [url]: value } }
+        : {
+            ...s,
+            texts: {
+              ...s.texts,
+              [activeLang]: { ...s.texts[activeLang], [key]: { ...s.texts[activeLang][key], [url]: value } },
+            },
+          }
+    );
+  const captionPlaceholderFor = (key) => (url) => {
+    const original = !fixed && refTexts ? refTexts[key]?.[url] : "";
+    return original ? `${LANG_LABELS[refLang]}: ${original}` : t("scenarioForm.captionPlaceholder");
+  };
+
+  const hintFor = (key) =>
+    refTexts ? (
+      <SourceHint
+        lang={refLang}
+        text={refTexts[key]}
+        canCopy={!texts[key].trim()}
+        onCopy={() => setText(key, refTexts[key])}
+      />
+    ) : null;
 
   const toolbarFor = (key) => (
     <TextFormatToolbar
@@ -769,6 +812,7 @@ function SituationEditor({
           <label style={styles.label}>
             {t("scenarioForm.scenario")} ({LANG_LABELS[activeLang]})
           </label>
+          {hintFor("scenario")}
           {toolbarFor("scenario")}
           <textarea
             ref={refs.scenario}
@@ -791,6 +835,7 @@ function SituationEditor({
               <label style={styles.label}>
                 {t("scenarioForm.solution")} ({LANG_LABELS[activeLang]})
               </label>
+              {hintFor("solution")}
               {modeButtons("solution_as_checklist", "solution", "scenarioForm.solutionMode")}
               {toolbarFor("solution")}
               <textarea
@@ -815,6 +860,7 @@ function SituationEditor({
               <label style={styles.label}>
                 {t("scenarioForm.acceptance")} ({LANG_LABELS[activeLang]})
               </label>
+              {hintFor("acceptance")}
               {modeButtons("acceptance_as_checklist", "acceptance", "scenarioForm.acceptanceMode")}
               {toolbarFor("acceptance")}
               <textarea
@@ -853,8 +899,11 @@ function SituationEditor({
                   urlsKey="acceptance_image_urls"
                   captionsKey="acceptance_image_captions"
                   label={t("scenarioForm.acceptanceImages")}
-                  hint={t("scenarioForm.acceptanceImagesHint")}
+                  hint={`${t("scenarioForm.acceptanceImagesHint")} ${t("translate.sharedShort")}`}
                   withCover={false}
+                  captions={captionsFor("acceptance_image_captions")}
+                  onCaption={onCaptionFor("acceptance_image_captions")}
+                  captionPlaceholder={captionPlaceholderFor("acceptance_image_captions")}
                 />
               )}
             </div>
@@ -865,6 +914,10 @@ function SituationEditor({
             onUpdate={onUpdate}
             disabled={disabled}
             setFormError={setFormError}
+            hint={t("translate.sharedShort")}
+            captions={captionsFor("image_captions")}
+            onCaption={onCaptionFor("image_captions")}
+            captionPlaceholder={captionPlaceholderFor("image_captions")}
           />
         </div>
       ) : null}
@@ -879,8 +932,9 @@ export default function ScenarioForm({
   onSave,
   onCancel,
   onManageWps,
+  initialLang,
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { notify, workPackages } = useAppData();
   const narrow = useIsNarrow();
   const isLegacyScenario = Boolean(initial) && !isScenarioV2Id(initial.id);
@@ -891,22 +945,37 @@ export default function ScenarioForm({
   const [form, setForm] = useState(() =>
     addSituation ? { ...baseline, situations: [...baseline.situations, blankSituation()] } : baseline
   );
-  const uiLanguage = SUPPORTED_SCENARIO_LOCALES.includes((i18n.language || "en").toLowerCase())
-    ? (i18n.language || "en").toLowerCase()
-    : "en";
-  const [enabledLangs, setEnabledLangs] = useState(() => {
-    const filled = SUPPORTED_SCENARIO_LOCALES.filter((lng) => languageHasContent(baseline, lng));
-    return filled.length ? filled : [uiLanguage];
-  });
-  const [activeLang, setActiveLang] = useState(() => {
-    const filled = SUPPORTED_SCENARIO_LOCALES.find((lng) => languageHasContent(baseline, lng));
-    return filled || uiLanguage;
-  });
+  const [formError, setFormError] = useState("");
+  const { enabledLangs, activeLang, setActiveLang, referenceLang, setReferenceChoice, addLang, removeLang } =
+    useEditorLanguages({
+      initialLang,
+      hasContent: (lng) => languageHasContent(baseline, lng),
+      onChange: () => setFormError(""),
+      clearLanguage: (lng) =>
+        setForm((f) => ({
+          ...f,
+          translations: { ...f.translations, [lng]: { title: "", tags: "" } },
+          situations: f.situations.map((s) => ({ ...s, texts: { ...s.texts, [lng]: blankText() } })),
+        })),
+      scoreOf: (lng) => {
+        const tr = form.translations[lng];
+        return (
+          (tr.title.trim() ? 1 : 0) +
+          form.situations.reduce(
+            (n, s) =>
+              n +
+              (s.texts[lng].scenario.trim() ? 1 : 0) +
+              (s.texts[lng].solution.trim() ? 1 : 0) +
+              (s.texts[lng].acceptance.trim() ? 1 : 0),
+            0
+          )
+        );
+      },
+    });
   const [openIds, setOpenIds] = useState(() => {
     if (addSituation) return new Set([form.situations[form.situations.length - 1].id]);
     return new Set([focusSituationId || baseline.situations[0].id]);
   });
-  const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const formErrorRef = useRef(null);
@@ -938,29 +1007,7 @@ export default function ScenarioForm({
   }, [formError]);
 
   const dirty = useMemo(() => JSON.stringify(form) !== baselineJson, [form, baselineJson]);
-
-  const blocker = useBlocker(dirty);
-
-  useEffect(() => {
-    if (blocker.state !== "blocked") return;
-    if (window.confirm(t("scenarioForm.unsavedConfirm"))) blocker.proceed();
-    else blocker.reset();
-  }, [blocker, t]);
-
-  useEffect(() => {
-    const onBeforeUnload = (e) => {
-      if (!dirty) return;
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
-
-  const confirmDiscard = useCallback(
-    () => !dirty || window.confirm(t("scenarioForm.unsavedConfirm")),
-    [dirty, t]
-  );
+  const confirmDiscard = useUnsavedGuard(dirty, t("scenarioForm.unsavedConfirm"));
 
   const requestCancel = useCallback(() => {
     if (confirmDiscard()) onCancel();
@@ -976,26 +1023,8 @@ export default function ScenarioForm({
     return () => window.removeEventListener("keydown", onKey);
   }, [requestCancel, showPreview]);
 
-  const toggleLang = (lng) => {
-    setFormError("");
-    if (enabledLangs.includes(lng)) {
-      if (enabledLangs.length === 1) {
-        setFormError(t("scenarioForm.languagesNeedOne"));
-        return;
-      }
-      const next = enabledLangs.filter((l) => l !== lng);
-      setForm((f) => ({
-        ...f,
-        translations: { ...f.translations, [lng]: { title: "", tags: "" } },
-        situations: f.situations.map((s) => ({ ...s, texts: { ...s.texts, [lng]: { ...BLANK_TEXT } } })),
-      }));
-      setEnabledLangs(next);
-      if (activeLang === lng) setActiveLang(next[0]);
-      return;
-    }
-    setEnabledLangs([...enabledLangs, lng]);
-    setActiveLang(lng);
-  };
+  const languageStatus = (lng) =>
+    languageIsComplete(form, lng) ? "complete" : languageHasContent(form, lng) ? "partial" : "empty";
 
   const patchTranslation = (key, value) => {
     setFormError("");
@@ -1010,10 +1039,31 @@ export default function ScenarioForm({
     setForm((f) => ({ ...f, situations: f.situations.map((s) => (s.id === id ? fn(s) : s)) }));
   };
 
+  const startConverting = () => {
+    if (converting) return;
+    setConverting(true);
+    setForm((f) => ({
+      ...f,
+      situations: f.situations.map((s) => ({
+        ...s,
+        texts: Object.fromEntries(
+          Object.entries(s.texts).map(([lng, tx]) => [
+            lng,
+            {
+              ...tx,
+              image_captions: { ...s.image_captions },
+              acceptance_image_captions: { ...s.acceptance_image_captions },
+            },
+          ])
+        ),
+      })),
+    }));
+  };
+
   const addNewSituation = () => {
     const created = blankSituation();
     setFormError("");
-    if (isLegacyScenario) setConverting(true);
+    if (isLegacyScenario) startConverting();
     setForm((f) => ({ ...f, situations: [...f.situations, created] }));
     setOpenIds((prev) => new Set(prev).add(created.id));
     requestAnimationFrame(() => {
@@ -1084,7 +1134,8 @@ export default function ScenarioForm({
           form,
           enabledLangs,
           complete.includes(activeLang) ? activeLang : complete[0],
-          converting ? initial.id : null
+          converting ? initial.id : null,
+          legacyMode
         )
       );
     } finally {
@@ -1105,14 +1156,16 @@ export default function ScenarioForm({
           solution: s.texts[activeLang].solution,
           acceptance: s.texts[activeLang].acceptance,
           image_urls: s.image_urls,
-          image_captions: s.image_captions,
+          image_captions: legacyMode ? s.image_captions : s.texts[activeLang].image_captions,
           acceptance_image_urls: s.acceptance_image_urls,
-          acceptance_image_captions: s.acceptance_image_captions,
+          acceptance_image_captions: legacyMode
+            ? s.acceptance_image_captions
+            : s.texts[activeLang].acceptance_image_captions,
           solution_as_checklist: s.solution_as_checklist,
           acceptance_as_checklist: s.acceptance_as_checklist,
         })),
     }),
-    [form, activeLang]
+    [form, activeLang, legacyMode]
   );
   const previewScenario = useMemo(
     () => ({ id: "preview", wps: form.wps, category_wps: [], confluence_page_id: "" }),
@@ -1241,59 +1294,35 @@ export default function ScenarioForm({
         <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>
           {t("scenarioForm.languagesHelp")}
         </p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginBottom: "0.75rem" }}>
-          {SUPPORTED_SCENARIO_LOCALES.map((lng) => (
-            <label
-              key={lng}
-              style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.9rem", cursor: "pointer" }}
-            >
-              <input
-                type="checkbox"
-                checked={enabledLangs.includes(lng)}
-                disabled={locked}
-                onChange={() => toggleLang(lng)}
-              />
-              {t("scenarioForm.languagesEnable", { lang: LANG_LABELS[lng] })}
-            </label>
-          ))}
-        </div>
-        <div style={{ ...styles.tabRow, marginBottom: "0.85rem" }} role="tablist" aria-label={t("scenarioForm.languagesLabel")}>
-          {enabledLangs.map((lng) => {
-            const filled = languageHasContent(form, lng);
-            const isActive = lng === activeLang;
-            return (
-              <button
-                key={lng}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => setActiveLang(lng)}
-                style={{
-                  ...styles.tabBtn,
-                  ...(isActive ? styles.tabBtnActive : {}),
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                {LANG_LABELS[lng]}
-                <span
-                  aria-label={filled ? t("scenarioForm.langFilled") : t("scenarioForm.langEmpty")}
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: filled ? "#1abc9c" : "#3a4a5a",
-                  }}
-                />
-              </button>
-            );
-          })}
-        </div>
+        <LanguageTabs
+          languages={SUPPORTED_SCENARIO_LOCALES}
+          enabled={enabledLangs}
+          active={activeLang}
+          statusOf={languageStatus}
+          onSelect={setActiveLang}
+          onAdd={addLang}
+          onRemove={removeLang}
+          disabled={locked}
+          ariaLabel={t("scenarioForm.languagesLabel")}
+          note={t("translate.sharedNote")}
+        />
+        <TranslateFrom
+          languages={enabledLangs.filter((l) => l !== activeLang)}
+          value={referenceLang}
+          onChange={setReferenceChoice}
+        />
 
         <label style={styles.label}>
           {t("scenarioForm.title")} ({LANG_LABELS[activeLang]})
         </label>
+        {referenceLang ? (
+          <SourceHint
+            lang={referenceLang}
+            text={form.translations[referenceLang].title}
+            canCopy={!form.translations[activeLang].title.trim()}
+            onCopy={() => patchTranslation("title", form.translations[referenceLang].title)}
+          />
+        ) : null}
         <input
           style={styles.input}
           placeholder={t("scenarioForm.title")}
@@ -1305,6 +1334,14 @@ export default function ScenarioForm({
         <label style={styles.label}>
           {t("scenarioForm.tags")} ({LANG_LABELS[activeLang]})
         </label>
+        {referenceLang ? (
+          <SourceHint
+            lang={referenceLang}
+            text={form.translations[referenceLang].tags}
+            canCopy={!form.translations[activeLang].tags.trim()}
+            onCopy={() => patchTranslation("tags", form.translations[referenceLang].tags)}
+          />
+        ) : null}
         <input
           style={styles.input}
           placeholder={t("scenarioForm.tagsPlaceholder")}
@@ -1351,7 +1388,8 @@ export default function ScenarioForm({
               onRemove={() => removeSituation(situation.id)}
               onMove={(delta) => moveSituation(index, delta)}
               fixed={legacyMode}
-              onConvert={() => setConverting(true)}
+              onConvert={startConverting}
+              refLang={referenceLang}
               disabled={locked}
               narrow={narrow}
               setFormError={setFormError}
@@ -1409,48 +1447,14 @@ export default function ScenarioForm({
         </div>
       </div>
       {showPreview ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={t("scenarioForm.previewTitle")}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 500,
-            background: "rgba(4, 8, 14, 0.85)",
-            display: "flex",
-            justifyContent: "center",
-            overflowY: "auto",
-            padding: "2rem 1rem",
-          }}
-          onClick={() => setShowPreview(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "#0d1520",
-              border: "1px solid #1a2a3a",
-              borderRadius: 12,
-              padding: "1.5rem",
-              width: "100%",
-              maxWidth: 1180,
-              height: "fit-content",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <span style={{ color: "#8899aa", fontSize: "0.85rem" }}>{t("scenarioForm.previewNote")}</span>
-              <button type="button" style={styles.ghostBtn} onClick={() => setShowPreview(false)}>
-                {t("scenarioForm.closePreview")}
-              </button>
-            </div>
-            <ScenarioDetail
-              scenario={previewScenario}
-              view={previewView}
-              onBack={() => setShowPreview(false)}
-              onNotify={notify}
-            />
-          </div>
-        </div>
+        <PreviewDialog onClose={() => setShowPreview(false)}>
+          <ScenarioDetail
+            scenario={previewScenario}
+            view={previewView}
+            onBack={() => setShowPreview(false)}
+            onNotify={notify}
+          />
+        </PreviewDialog>
       ) : null}
     </div>
   );

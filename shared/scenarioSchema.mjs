@@ -11,14 +11,15 @@ export function parseVerdict(value) {
   return VERDICT_CODES.includes(s) ? s : undefined;
 }
 
-export function coerceSolutionAsChecklist(value) {
+function coerceSolutionAsChecklist(value) {
   return value === true || value === 1 || value === "true";
 }
+
 const TAG_MAX_LEN = 60;
 const TITLE_MAX_LEN = 240;
 const BODY_MAX_LEN = 20_000;
 
-export function isScenarioRecord(s) {
+function isScenarioRecord(s) {
   if (!s || typeof s !== "object") return false;
   const id = Number(s.id);
   if (!Number.isFinite(id) || id < 1) return false;
@@ -83,7 +84,7 @@ export function sanitizeImageUrls(listOrSingle, options = {}) {
 
 const CAPTION_MAX_LEN = 200;
 
-export function sanitizeImageCaptions(raw, validUrls) {
+function sanitizeImageCaptions(raw, validUrls) {
   const out = {};
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
   const allowed = new Set(Array.isArray(validUrls) ? validUrls : []);
@@ -99,7 +100,6 @@ export function sanitizeImageCaptions(raw, validUrls) {
 function collectRawImageInputs(s) {
   if (Array.isArray(s?.image_urls) && s.image_urls.length) return s.image_urls;
   if (typeof s?.image_url === "string" && s.image_url.trim()) return [s.image_url];
-  if (Array.isArray(s?.image_urls)) return [];
   return [];
 }
 
@@ -139,7 +139,7 @@ function sanitizeTags(list) {
   return out;
 }
 
-export function sanitizeTranslation(raw) {
+function sanitizeTranslation(raw) {
   if (!raw || typeof raw !== "object") return null;
   const title = typeof raw.title === "string" ? raw.title.trim().slice(0, TITLE_MAX_LEN) : "";
   const scenario =
@@ -163,7 +163,7 @@ export function sanitizeTranslations(raw) {
   return out;
 }
 
-export function pickTranslation(scenario, preferred) {
+function pickTranslation(scenario, preferred) {
   if (!scenario) return null;
   const t = scenario.translations || {};
   const hasAnyTranslation = SUPPORTED_SCENARIO_LOCALES.some((lng) => {
@@ -241,6 +241,14 @@ export function sanitizeSituations(raw, options = {}) {
     usedIds.add(id);
     const image_urls = sanitizeImageUrls(item.image_urls, options);
     const acceptance_image_urls = sanitizeImageUrls(item.acceptance_image_urls, options);
+    for (const lng of Object.keys(translations)) {
+      const rawSlot = item.translations[lng];
+      translations[lng].image_captions = sanitizeImageCaptions(rawSlot.image_captions, image_urls);
+      translations[lng].acceptance_image_captions = sanitizeImageCaptions(
+        rawSlot.acceptance_image_captions,
+        acceptance_image_urls
+      );
+    }
     out.push({
       id,
       verdict,
@@ -344,9 +352,9 @@ export function pickScenarioView(scenario, preferred) {
         solution: t.solution,
         acceptance: t.acceptance || "",
         image_urls: s.image_urls || [],
-        image_captions: s.image_captions || {},
+        image_captions: { ...(s.image_captions || {}), ...(t.image_captions || {}) },
         acceptance_image_urls: s.acceptance_image_urls || [],
-        acceptance_image_captions: s.acceptance_image_captions || {},
+        acceptance_image_captions: { ...(s.acceptance_image_captions || {}), ...(t.acceptance_image_captions || {}) },
         solution_as_checklist: s.solution_as_checklist === true,
         acceptance_as_checklist: s.acceptance_as_checklist === true,
       });

@@ -5,11 +5,11 @@ import { fileURLToPath } from "url";
 import {
   normalizeCategory,
   normalizeWorkPackage,
-  sanitizeWpList,
   slugifyLabel,
 } from "../shared/categoryMap.mjs";
 import { isScenarioV2Id, normalizeScenario } from "../shared/scenarioSchema.mjs";
 import { normalizeGuide } from "../shared/guideSchema.mjs";
+import { applyOrder } from "../shared/ordering.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
@@ -110,6 +110,18 @@ function withCategoryWps(scenarios, categories) {
     .filter(Boolean);
 }
 
+function categoriesFromScenarios(scenarios) {
+  const labels = [...new Set(scenarios.map((s) => s.category))];
+  return labels.map((label, i) =>
+    normalizeCategory({
+      slug: slugifyLabel(label),
+      label,
+      sort_order: i + 1,
+      wps: [],
+    })
+  );
+}
+
 async function loadStore() {
   const data = await readRaw();
   if (!data) return null;
@@ -117,15 +129,7 @@ async function loadStore() {
   if (Array.isArray(data)) {
     const scenarios = parseScenarioList(data);
     if (!scenarios) return null;
-    const labels = [...new Set(scenarios.map((s) => s.category))];
-    const categories = labels.map((label, i) =>
-      normalizeCategory({
-        slug: slugifyLabel(label),
-        label,
-        sort_order: i + 1,
-        wps: [],
-      })
-    );
+    const categories = categoriesFromScenarios(scenarios);
     return {
       categories,
       workPackages: [],
@@ -147,15 +151,7 @@ async function loadStore() {
   );
   if (!categories) {
     if (data.categories != null && !Array.isArray(data.categories)) return null;
-    const labels = [...new Set(scenarios.map((s) => s.category))];
-    categories = labels.map((label, i) =>
-      normalizeCategory({
-        slug: slugifyLabel(label),
-        label,
-        sort_order: i + 1,
-        wps: [],
-      })
-    );
+    categories = categoriesFromScenarios(scenarios);
   }
 
   const workPackages = collectWorkPackages(
@@ -228,114 +224,6 @@ export async function readCategoriesFromDisk() {
 export async function readWorkPackagesFromDisk() {
   const store = await loadStore();
   return store?.workPackages ?? null;
-}
-
-function resolveWpsAgainstStore(store, labelsOrSlugs) {
-  const wanted = sanitizeWpList(labelsOrSlugs);
-  const out = [];
-  for (const w of wanted) {
-    const found = store.workPackages.find((p) => p.label === w || p.slug === w);
-    if (!found) throw new Error(`Unknown WP: ${w}`);
-    out.push(found.label);
-  }
-  return out;
-}
-
-export async function insertCategoryOnDisk(payload) {
-  const store = await loadStore();
-  if (!store) throw new Error("Read failed");
-
-  const label = String(payload?.label || "").trim();
-  if (!label) throw new Error("Label required");
-  if (store.categories.some((c) => c.label === label)) {
-    throw new Error("Category label already exists");
-  }
-
-  let slug =
-    typeof payload?.slug === "string" && payload.slug.trim()
-      ? slugifyLabel(payload.slug)
-      : slugifyLabel(label);
-  if (store.categories.some((c) => c.slug === slug)) {
-    slug = `${slug}_${Date.now().toString(36)}`;
-  }
-
-  const sort_order =
-    payload?.sort_order != null && Number.isFinite(Number(payload.sort_order))
-      ? Number(payload.sort_order)
-      : store.categories.reduce((max, c) => Math.max(max, c.sort_order), 0) + 1;
-
-  const wps = Object.prototype.hasOwnProperty.call(payload || {}, "wps")
-    ? resolveWpsAgainstStore(store, payload.wps)
-    : [];
-  const category = { slug, label, sort_order, wps };
-  const result = await persistStore({
-    categories: [...store.categories, category].sort(
-      (a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label)
-    ),
-    workPackages: store.workPackages,
-    scenarios: store.scenarios,
-  });
-  return result.categories.find((c) => c.slug === slug) || category;
-}
-
-export async function updateCategoryOnDisk(slug, payload) {
-  const store = await loadStore();
-  if (!store) throw new Error("Read failed");
-  const idx = store.categories.findIndex((c) => c.slug === slug);
-  if (idx < 0) return null;
-
-  const current = store.categories[idx];
-  const nextLabel =
-    typeof payload?.label === "string" && payload.label.trim()
-      ? payload.label.trim()
-      : current.label;
-  if (store.categories.some((c) => c.slug !== slug && c.label === nextLabel)) {
-    throw new Error("Category label already exists");
-  }
-
-  const sort_order =
-    payload?.sort_order != null && Number.isFinite(Number(payload.sort_order))
-      ? Number(payload.sort_order)
-      : current.sort_order;
-
-  const wps = Object.prototype.hasOwnProperty.call(payload || {}, "wps")
-    ? resolveWpsAgainstStore(store, payload.wps)
-    : current.wps || [];
-  const updated = { ...current, label: nextLabel, sort_order, wps };
-  const categories = store.categories.map((c) => (c.slug === slug ? updated : c));
-
-  const scenarios =
-    nextLabel === current.label
-      ? store.scenarios
-      : store.scenarios.map((s) =>
-          s.category === current.label ? { ...s, category: nextLabel } : s
-        );
-
-  const result = await persistStore({
-    categories,
-    workPackages: store.workPackages,
-    scenarios,
-  });
-  return result.categories.find((c) => c.slug === slug) || updated;
-}
-
-export async function deleteCategoryOnDisk(slug) {
-  const store = await loadStore();
-  if (!store) throw new Error("Read failed");
-  const cat = store.categories.find((c) => c.slug === slug);
-  if (!cat) return { deleted: false, reason: "not_found" };
-
-  const inUse = store.scenarios.filter((s) => s.category === cat.label).length;
-  if (inUse > 0) {
-    return { deleted: false, reason: "in_use", count: inUse };
-  }
-
-  await persistStore({
-    categories: store.categories.filter((c) => c.slug !== slug),
-    workPackages: store.workPackages,
-    scenarios: store.scenarios,
-  });
-  return { deleted: true };
 }
 
 export async function insertWorkPackageOnDisk(payload) {
@@ -429,21 +317,11 @@ export async function deleteWorkPackageOnDisk(slug) {
   return { deleted: true };
 }
 
-// Puts the work packages in exactly the order given and renumbers them 1..n, so the order always sticks.
-// Any work package missing from the list keeps its relative position at the end.
 export async function reorderWorkPackagesOnDisk(orderedSlugs) {
   const store = await loadStore();
   if (!store) throw new Error("Read failed");
   const bySlug = new Map(store.workPackages.map((w) => [w.slug, w]));
-  const seen = new Set();
-  const ordered = [];
-  for (const slug of Array.isArray(orderedSlugs) ? orderedSlugs : []) {
-    if (bySlug.has(slug) && !seen.has(slug)) {
-      seen.add(slug);
-      ordered.push(bySlug.get(slug));
-    }
-  }
-  for (const w of store.workPackages) if (!seen.has(w.slug)) ordered.push(w);
+  const ordered = applyOrder(store.workPackages.map((w) => w.slug), orderedSlugs).map((slug) => bySlug.get(slug));
   const result = await persistStore({
     categories: store.categories,
     workPackages: ordered.map((w, i) => ({ ...w, sort_order: i + 1 })),
@@ -520,12 +398,6 @@ export async function listGuidesOnDisk({ publishedOnly = false } = {}) {
     .sort(bySortOrder);
 }
 
-export async function getGuideOnDisk(id) {
-  const [{ guides }, labels] = await Promise.all([readGuidesFile(), wpLabelsBySlug()]);
-  const raw = guides.find((g) => g.id === id);
-  return raw ? guideFromRaw(raw, labels) : null;
-}
-
 export async function insertGuideOnDisk(payload) {
   const store = await loadStore();
   if (!store) throw new Error("Read failed");
@@ -587,15 +459,8 @@ export async function reorderGuidesOnDisk(orderedIds) {
   const labels = await wpLabelsBySlug();
   return mutateGuides((data) => {
     const byId = new Map(data.guides.map((g) => [g.id, g]));
-    const seen = new Set();
-    const ordered = [];
-    for (const id of Array.isArray(orderedIds) ? orderedIds : []) {
-      if (byId.has(id) && !seen.has(id)) {
-        seen.add(id);
-        ordered.push(byId.get(id));
-      }
-    }
-    for (const g of [...data.guides].sort(bySortOrder)) if (!seen.has(g.id)) ordered.push(g);
+    const currentIds = [...data.guides].sort(bySortOrder).map((g) => g.id);
+    const ordered = applyOrder(currentIds, orderedIds).map((id) => byId.get(id));
     ordered.forEach((g, i) => {
       g.sort_order = i + 1;
     });

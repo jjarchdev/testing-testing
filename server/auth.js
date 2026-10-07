@@ -31,7 +31,7 @@ export async function isAllowedAdmin(email) {
   return !!(data && data.is_active !== false);
 }
 
-export async function isAllowlistEmpty() {
+async function isAllowlistEmpty() {
   if (!isSupabaseConfigured()) return true;
   const sb = getSupabase();
   const { count, error } = await sb

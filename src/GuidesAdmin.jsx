@@ -1,44 +1,31 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { useBlocker } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { apiFetchWithAuth, uploadImageFile } from "./api.js";
 import { useAppData } from "./AppData.jsx";
 import Dropdown from "./Dropdown.jsx";
+import PreviewDialog from "./PreviewDialog.jsx";
 import SortableList from "./SortableList.jsx";
 import { GuideViewer } from "./Guides.jsx";
 import { PhotoFrame } from "./PhotoGrid.jsx";
 import { ChevronDownIcon, ChevronUpIcon, GripIcon, ImageIcon } from "./icons.jsx";
+import {
+  LANG_LABELS,
+  LanguageBadges,
+  LanguageTabs,
+  SourceHint,
+  TranslateFrom,
+  guideLangStatus,
+  useEditorLanguages,
+  useUiLanguage,
+} from "./translation.jsx";
 import { useIsNarrow } from "./useIsNarrow.js";
+import { useUnsavedGuard } from "./useUnsavedGuard.js";
+import { splitTags } from "./utils.js";
 import { styles } from "./styles.js";
 import { SUPPORTED_SCENARIO_LOCALES } from "../shared/scenarioSchema.mjs";
 import { MAX_GUIDE_STEPS, guideCoverUrl, pickGuideView } from "../shared/guideSchema.mjs";
 
-const LANG_LABELS = { en: "English", de: "Deutsch", sq: "Shqip" };
-
-const orderBtn = {
-  width: 34,
-  height: 34,
-  padding: 0,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: 8,
-  fontSize: "0.95rem",
-  lineHeight: 1,
-  flexShrink: 0,
-};
-
-const hiddenInput = {
-  position: "absolute",
-  width: 1,
-  height: 1,
-  padding: 0,
-  margin: -1,
-  overflow: "hidden",
-  clip: "rect(0, 0, 0, 0)",
-  whiteSpace: "nowrap",
-  border: 0,
-};
+const compactBtn = { ...styles.ghostBtn, padding: "0.35rem 0.7rem", fontSize: "0.8rem" };
 
 function newStepId() {
   return `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -50,13 +37,6 @@ function blankTexts() {
 
 function newStep(imageUrl = "") {
   return { id: newStepId(), image_url: imageUrl, texts: blankTexts() };
-}
-
-function splitTags(value) {
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 function buildForm(guide) {
@@ -127,7 +107,6 @@ function StepPhoto({ step, onChange, disabled, narrow, setFormError }) {
   };
 
   const locked = disabled || uploading;
-  const smallBtn = { ...styles.ghostBtn, padding: "0.35rem 0.7rem", fontSize: "0.8rem" };
 
   return (
     <div style={{ width: narrow ? "100%" : 170, flexShrink: 0, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
@@ -158,7 +137,7 @@ function StepPhoto({ step, onChange, disabled, narrow, setFormError }) {
         type="file"
         accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
         disabled={locked}
-        style={hiddenInput}
+        style={styles.visuallyHidden}
         onChange={async (e) => {
           const file = e.target.files?.[0];
           e.target.value = "";
@@ -169,7 +148,7 @@ function StepPhoto({ step, onChange, disabled, narrow, setFormError }) {
         <label
           htmlFor={inputId}
           style={{
-            ...smallBtn,
+            ...compactBtn,
             cursor: locked ? "default" : "pointer",
             opacity: locked ? 0.55 : 1,
             pointerEvents: locked ? "none" : "auto",
@@ -178,7 +157,7 @@ function StepPhoto({ step, onChange, disabled, narrow, setFormError }) {
           {uploading ? "…" : step.image_url ? t("guides.form.replacePhoto") : t("guides.form.addPhoto")}
         </label>
         {step.image_url ? (
-          <button type="button" style={{ ...smallBtn, color: "#ff6b6b" }} disabled={locked} onClick={() => onChange("")}>
+          <button type="button" style={{ ...compactBtn, color: "#ff6b6b" }} disabled={locked} onClick={() => onChange("")}>
             {t("guides.form.removePhoto")}
           </button>
         ) : null}
@@ -187,25 +166,34 @@ function StepPhoto({ step, onChange, disabled, narrow, setFormError }) {
   );
 }
 
-function GuideForm({ initial, onSave, onCancel }) {
-  const { t, i18n } = useTranslation();
+function GuideForm({ initial, onSave, onCancel, initialLang }) {
+  const { t } = useTranslation();
   const { workPackages } = useAppData();
   const narrow = useIsNarrow();
   const [baseline] = useState(() => buildForm(initial));
   const baselineJson = useMemo(() => JSON.stringify(baseline), [baseline]);
   const [form, setForm] = useState(baseline);
-  const uiLanguage = SUPPORTED_SCENARIO_LOCALES.includes((i18n.language || "en").toLowerCase())
-    ? (i18n.language || "en").toLowerCase()
-    : "en";
-  const [enabledLangs, setEnabledLangs] = useState(() => {
-    const filled = SUPPORTED_SCENARIO_LOCALES.filter((lng) => languageHasContent(baseline, lng));
-    return filled.length ? filled : [uiLanguage];
-  });
-  const [activeLang, setActiveLang] = useState(() => {
-    const filled = SUPPORTED_SCENARIO_LOCALES.find((lng) => languageHasContent(baseline, lng));
-    return filled || uiLanguage;
-  });
   const [formError, setFormError] = useState("");
+  const { enabledLangs, activeLang, setActiveLang, referenceLang, setReferenceChoice, addLang, removeLang } =
+    useEditorLanguages({
+      initialLang,
+      hasContent: (lng) => languageHasContent(baseline, lng),
+      onChange: () => setFormError(""),
+      clearLanguage: (lng) =>
+        setForm((f) => ({
+          ...f,
+          translations: { ...f.translations, [lng]: { title: "", summary: "", tags: "" } },
+          steps: f.steps.map((s) => ({ ...s, texts: { ...s.texts, [lng]: "" } })),
+        })),
+      scoreOf: (lng) => {
+        const tr = form.translations[lng];
+        return (
+          (tr.title.trim() ? 1 : 0) +
+          (tr.summary.trim() ? 1 : 0) +
+          form.steps.reduce((n, s) => n + (s.texts[lng].trim() ? 1 : 0), 0)
+        );
+      },
+    });
   const [busy, setBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [dragActive, setDragActive] = useState(false);
@@ -220,31 +208,15 @@ function GuideForm({ initial, onSave, onCancel }) {
   const atStepCap = form.steps.length >= MAX_GUIDE_STEPS;
 
   const dirty = useMemo(() => JSON.stringify(form) !== baselineJson, [form, baselineJson]);
-  const blocker = useBlocker(dirty);
-
-  useEffect(() => {
-    if (blocker.state !== "blocked") return;
-    if (window.confirm(t("guides.form.unsavedConfirm"))) blocker.proceed();
-    else blocker.reset();
-  }, [blocker, t]);
-
-  useEffect(() => {
-    const onBeforeUnload = (e) => {
-      if (!dirty) return;
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
+  const confirmDiscard = useUnsavedGuard(dirty, t("guides.form.unsavedConfirm"));
 
   useEffect(() => {
     if (formError) formErrorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [formError]);
 
   const requestCancel = useCallback(() => {
-    if (!dirty || window.confirm(t("guides.form.unsavedConfirm"))) onCancel();
-  }, [dirty, onCancel, t]);
+    if (confirmDiscard()) onCancel();
+  }, [confirmDiscard, onCancel]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -256,26 +228,22 @@ function GuideForm({ initial, onSave, onCancel }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [requestCancel, showPreview]);
 
-  const toggleLang = (lng) => {
-    setFormError("");
-    if (enabledLangs.includes(lng)) {
-      if (enabledLangs.length === 1) {
-        setFormError(t("guides.form.needOneLang"));
-        return;
-      }
-      const next = enabledLangs.filter((l) => l !== lng);
-      setForm((f) => ({
-        ...f,
-        translations: { ...f.translations, [lng]: { title: "", summary: "", tags: "" } },
-        steps: f.steps.map((s) => ({ ...s, texts: { ...s.texts, [lng]: "" } })),
-      }));
-      setEnabledLangs(next);
-      if (activeLang === lng) setActiveLang(next[0]);
-      return;
-    }
-    setEnabledLangs([...enabledLangs, lng]);
-    setActiveLang(lng);
+  const languageStatus = (lng) => {
+    const tr = form.translations[lng];
+    const stepsWithText = form.steps.filter((s) => SUPPORTED_SCENARIO_LOCALES.some((l) => s.texts[l].trim()));
+    if (tr.title.trim() && stepsWithText.every((s) => s.texts[lng].trim())) return "complete";
+    return languageHasContent(form, lng) ? "partial" : "empty";
   };
+
+  const hintFor = (key) =>
+    referenceLang ? (
+      <SourceHint
+        lang={referenceLang}
+        text={form.translations[referenceLang][key]}
+        canCopy={!form.translations[activeLang][key].trim()}
+        onCopy={() => patchTranslation(key, form.translations[referenceLang][key])}
+      />
+    ) : null;
 
   const patchTranslation = (key, value) => {
     setFormError("");
@@ -385,46 +353,28 @@ function GuideForm({ initial, onSave, onCancel }) {
 
       <label style={styles.label}>{t("guides.form.languages")}</label>
       <p style={{ color: "#8899aa", fontSize: "0.8rem", marginTop: 0 }}>{t("guides.form.languagesHelp")}</p>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginBottom: "0.75rem" }}>
-        {SUPPORTED_SCENARIO_LOCALES.map((lng) => (
-          <label key={lng} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.9rem", cursor: "pointer" }}>
-            <input type="checkbox" checked={enabledLangs.includes(lng)} disabled={locked} onChange={() => toggleLang(lng)} />
-            {t("guides.form.include", { lang: LANG_LABELS[lng] })}
-          </label>
-        ))}
-      </div>
-      <div style={{ ...styles.tabRow, marginBottom: "0.85rem" }} role="tablist" aria-label={t("guides.form.languages")}>
-        {enabledLangs.map((lng) => {
-          const filled = languageHasContent(form, lng);
-          const isActive = lng === activeLang;
-          return (
-            <button
-              key={lng}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setActiveLang(lng)}
-              style={{
-                ...styles.tabBtn,
-                ...(isActive ? styles.tabBtnActive : {}),
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              {LANG_LABELS[lng]}
-              <span
-                aria-label={filled ? t("guides.form.langFilled") : t("guides.form.langEmpty")}
-                style={{ width: 6, height: 6, borderRadius: "50%", background: filled ? "#1abc9c" : "#3a4a5a" }}
-              />
-            </button>
-          );
-        })}
-      </div>
+      <LanguageTabs
+        languages={SUPPORTED_SCENARIO_LOCALES}
+        enabled={enabledLangs}
+        active={activeLang}
+        statusOf={languageStatus}
+        onSelect={setActiveLang}
+        onAdd={addLang}
+        onRemove={removeLang}
+        disabled={locked}
+        ariaLabel={t("guides.form.languages")}
+        note={t("translate.sharedNoteGuide")}
+      />
+      <TranslateFrom
+        languages={enabledLangs.filter((l) => l !== activeLang)}
+        value={referenceLang}
+        onChange={setReferenceChoice}
+      />
 
       <label style={styles.label}>
         {t("guides.form.titleLabel")} ({LANG_LABELS[activeLang]})
       </label>
+      {hintFor("title")}
       <input
         style={styles.input}
         placeholder={t("guides.form.titlePlaceholder")}
@@ -436,6 +386,7 @@ function GuideForm({ initial, onSave, onCancel }) {
       <label style={styles.label}>
         {t("guides.form.summary")} ({LANG_LABELS[activeLang]})
       </label>
+      {hintFor("summary")}
       <textarea
         style={{ ...styles.input, height: 80 }}
         placeholder={t("guides.form.summaryPlaceholder")}
@@ -447,6 +398,7 @@ function GuideForm({ initial, onSave, onCancel }) {
       <label style={styles.label}>
         {t("guides.form.tags")} ({LANG_LABELS[activeLang]})
       </label>
+      {hintFor("tags")}
       <input
         style={styles.input}
         placeholder={t("guides.form.tagsPlaceholder")}
@@ -518,7 +470,7 @@ function GuideForm({ initial, onSave, onCancel }) {
               multiple
               accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
               disabled={locked || atStepCap}
-              style={hiddenInput}
+              style={styles.visuallyHidden}
               onChange={async (e) => {
                 const files = Array.from(e.target.files || []);
                 e.target.value = "";
@@ -581,7 +533,7 @@ function GuideForm({ initial, onSave, onCancel }) {
                       <button
                         type="button"
                         {...ctx.handleProps}
-                        style={{ ...styles.ghostBtn, ...orderBtn, ...ctx.handleStyle, color: "#8899aa" }}
+                        style={{ ...styles.iconBtn, ...ctx.handleStyle, color: "#8899aa" }}
                         aria-label={t("guides.form.dragStep", { n })}
                         title={t("guides.form.dragStep", { n })}
                       >
@@ -590,7 +542,7 @@ function GuideForm({ initial, onSave, onCancel }) {
                       <button
                         type="button"
                         {...ctx.upProps}
-                        style={{ ...styles.ghostBtn, ...orderBtn, opacity: ctx.upProps.disabled ? 0.35 : 1 }}
+                        style={{ ...styles.iconBtn, opacity: ctx.upProps.disabled ? 0.35 : 1 }}
                         aria-label={t("guides.form.moveUp", { n })}
                         title={t("guides.form.moveUp", { n })}
                       >
@@ -599,7 +551,7 @@ function GuideForm({ initial, onSave, onCancel }) {
                       <button
                         type="button"
                         {...ctx.downProps}
-                        style={{ ...styles.ghostBtn, ...orderBtn, opacity: ctx.downProps.disabled ? 0.35 : 1 }}
+                        style={{ ...styles.iconBtn, opacity: ctx.downProps.disabled ? 0.35 : 1 }}
                         aria-label={t("guides.form.moveDown", { n })}
                         title={t("guides.form.moveDown", { n })}
                       >
@@ -642,6 +594,14 @@ function GuideForm({ initial, onSave, onCancel }) {
                         <label style={{ ...styles.label, marginTop: 0 }}>
                           {t("guides.form.caption", { lang: LANG_LABELS[activeLang] })}
                         </label>
+                        {referenceLang ? (
+                          <SourceHint
+                            lang={referenceLang}
+                            text={step.texts[referenceLang]}
+                            canCopy={!step.texts[activeLang].trim()}
+                            onCopy={() => setStepText(step.id, step.texts[referenceLang])}
+                          />
+                        ) : null}
                         <textarea
                           style={{ ...styles.input, height: 110 }}
                           placeholder={t("guides.form.captionPlaceholder")}
@@ -691,57 +651,24 @@ function GuideForm({ initial, onSave, onCancel }) {
       </div>
 
       {showPreview && preview.view ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={t("scenarioForm.previewTitle")}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 500,
-            background: "rgba(4, 8, 14, 0.85)",
-            display: "flex",
-            justifyContent: "center",
-            overflowY: "auto",
-            padding: "2rem 1rem",
-          }}
-          onClick={() => setShowPreview(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "#0d1520",
-              border: "1px solid #1a2a3a",
-              borderRadius: 12,
-              padding: "1.5rem",
-              width: "100%",
-              maxWidth: 1180,
-              height: "fit-content",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <span style={{ color: "#8899aa", fontSize: "0.85rem" }}>{t("scenarioForm.previewNote")}</span>
-              <button type="button" style={styles.ghostBtn} onClick={() => setShowPreview(false)}>
-                {t("scenarioForm.closePreview")}
-              </button>
-            </div>
-            <GuideViewer guide={preview.guide} view={preview.view} onBack={() => setShowPreview(false)} />
-          </div>
-        </div>
+        <PreviewDialog onClose={() => setShowPreview(false)}>
+          <GuideViewer guide={preview.guide} view={preview.view} onBack={() => setShowPreview(false)} />
+        </PreviewDialog>
       ) : null}
     </div>
   );
 }
 
 export default function GuidesAdmin({ startWithNew = false, onBack, onAuthFailure }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { guides, setGuides, loadGuidesFromServer, guidesLoadError, adminSession, notify } = useAppData();
   const [mode, setMode] = useState(startWithNew ? "form" : "list");
   const [editing, setEditing] = useState(null);
+  const [editingLang, setEditingLang] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const [busy, setBusy] = useState(false);
   const reorderSeq = useRef(0);
-  const uiLng = (i18n.language || "en").slice(0, 2);
+  const uiLng = useUiLanguage();
 
   useEffect(() => {
     loadGuidesFromServer();
@@ -750,13 +677,15 @@ export default function GuidesAdmin({ startWithNew = false, onBack, onAuthFailur
   const list = guides || [];
   const titleOf = (guide) => pickGuideView(guide, uiLng)?.title || guide.title || t("guides.untitled");
 
-  const openForm = (guide = null) => {
+  const openForm = (guide = null, lang = null) => {
     setEditing(guide);
+    setEditingLang(lang);
     setMode("form");
   };
 
   const backToList = () => {
     setEditing(null);
+    setEditingLang(null);
     setMode("list");
   };
 
@@ -845,7 +774,15 @@ export default function GuidesAdmin({ startWithNew = false, onBack, onAuthFailur
   };
 
   if (mode === "form") {
-    return <GuideForm key={editing ? `edit-${editing.id}` : "new"} initial={editing} onSave={saveGuide} onCancel={backToList} />;
+    return (
+      <GuideForm
+        key={editing ? `edit-${editing.id}-${editingLang || ""}` : "new"}
+        initial={editing}
+        initialLang={editingLang}
+        onSave={saveGuide}
+        onCancel={backToList}
+      />
+    );
   }
 
   return (
@@ -907,7 +844,7 @@ export default function GuidesAdmin({ startWithNew = false, onBack, onAuthFailur
                           <button
                             type="button"
                             {...ctx.handleProps}
-                            style={{ ...styles.ghostBtn, ...orderBtn, ...ctx.handleStyle, color: "#8899aa" }}
+                            style={{ ...styles.iconBtn, ...ctx.handleStyle, color: "#8899aa" }}
                             aria-label={t("guides.dragHandle", { title })}
                             title={t("guides.dragHandle", { title })}
                           >
@@ -916,7 +853,7 @@ export default function GuidesAdmin({ startWithNew = false, onBack, onAuthFailur
                           <button
                             type="button"
                             {...ctx.upProps}
-                            style={{ ...styles.ghostBtn, ...orderBtn, opacity: ctx.upProps.disabled ? 0.35 : 1 }}
+                            style={{ ...styles.iconBtn, opacity: ctx.upProps.disabled ? 0.35 : 1 }}
                             aria-label={t("guides.moveUp", { title })}
                             title={t("guides.moveUp", { title })}
                           >
@@ -925,7 +862,7 @@ export default function GuidesAdmin({ startWithNew = false, onBack, onAuthFailur
                           <button
                             type="button"
                             {...ctx.downProps}
-                            style={{ ...styles.ghostBtn, ...orderBtn, opacity: ctx.downProps.disabled ? 0.35 : 1 }}
+                            style={{ ...styles.iconBtn, opacity: ctx.downProps.disabled ? 0.35 : 1 }}
                             aria-label={t("guides.moveDown", { title })}
                             title={t("guides.moveDown", { title })}
                           >
@@ -944,6 +881,10 @@ export default function GuidesAdmin({ startWithNew = false, onBack, onAuthFailur
                               {(guide.wps || []).join(", ") || "—"} · {t("guides.stepsCount", { count: guide.steps.length })}
                             </div>
                           </div>
+                          <LanguageBadges
+                            statusOf={(lng) => guideLangStatus(guide, lng)}
+                            onOpen={(lng) => openForm(guide, lng)}
+                          />
                           <span
                             style={{
                               width: 64,

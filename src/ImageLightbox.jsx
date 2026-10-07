@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { styles } from "./styles.js";
 import { renderInlineFormatting } from "./richText.jsx";
 
@@ -25,8 +26,17 @@ const navBtn = {
   zIndex: 2,
 };
 
-// images: [{ url, caption?, title? }]. Closes on Escape or backdrop click; arrows/swipe move between images.
-export default function ImageLightbox({ images, index, onIndexChange, onClose, labels, richCaption = false }) {
+export default function ImageLightbox({ images, index, onIndexChange, onClose, richCaption = false }) {
+  const { t } = useTranslation();
+  const labels = {
+    dialog: t("employee.imageLightbox"),
+    close: t("employee.closeImage"),
+    prev: t("employee.prevImage"),
+    next: t("employee.nextImage"),
+    zoomIn: t("employee.zoomIn"),
+    zoomOut: t("employee.zoomOut"),
+    zoomReset: t("employee.zoomReset"),
+  };
   const [zoom, setZoom] = useState(1);
   const touch = useRef(null);
   const closeRef = useRef(null);
